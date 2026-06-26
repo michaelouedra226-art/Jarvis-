@@ -86,44 +86,225 @@ fun JarvisApp(viewModel: JarvisViewModel) {
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        bottomBar = {
-            JarvisBottomBar(
-                currentTab = viewModel.currentTab,
-                onTabSelected = { tab ->
-                    viewModel.currentTab = tab
-                    viewModel.stopSpeaking()
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(
+                drawerContainerColor = MaterialTheme.colorScheme.surface,
+                drawerTonalElevation = 8.dp,
+                modifier = Modifier
+                    .width(300.dp)
+                    .fillMaxHeight()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(16.dp)
+                ) {
+                    // Drawer Header
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 24.dp, top = 8.dp)
+                    ) {
+                        // Glowing / pulsing orb indicator
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)
+                                .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                "JARVIS OS",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                letterSpacing = 2.sp
+                            )
+                            Text(
+                                "Système actif",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Navigation Items
+                    val navItems = listOf(
+                        Triple("accueil", "Accueil", Icons.Rounded.Home),
+                        Triple("conversations", "Discussions", Icons.Rounded.ChatBubble),
+                        Triple("recherche", "Recherche IA", Icons.Rounded.Search),
+                        Triple("fichiers", "Documents", Icons.Rounded.Folder),
+                        Triple("parametres", "Configuration", Icons.Rounded.Settings)
+                    )
+
+                    navItems.forEach { (tabId, label, icon) ->
+                        val isSelected = viewModel.currentTab == tabId
+                        NavigationDrawerItem(
+                            label = { 
+                                Text(
+                                    text = label, 
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 14.sp
+                                ) 
+                            },
+                            selected = isSelected,
+                            onClick = {
+                                viewModel.currentTab = tabId
+                                viewModel.stopSpeaking()
+                                scope.launch { drawerState.close() }
+                            },
+                            icon = { Icon(icon, contentDescription = label) },
+                            colors = NavigationDrawerItemDefaults.colors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .padding(vertical = 4.dp)
+                                .testTag("nav_$tabId")
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Recent Chats subsection in drawer
+                    Text(
+                        "Dernières discussions",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+
+                    val recentChats = conversations.take(4)
+                    if (recentChats.isEmpty()) {
+                        Text(
+                            "Aucun historique",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    } else {
+                        recentChats.forEach { chat ->
+                            val isSelectedChat = viewModel.activeConversationId.value == chat.id
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (isSelectedChat) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) 
+                                        else Color.Transparent
+                                    )
+                                    .clickable {
+                                        viewModel.selectConversation(chat.id)
+                                        viewModel.currentTab = "accueil"
+                                        scope.launch { drawerState.close() }
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Message,
+                                    contentDescription = null,
+                                    tint = if (isSelectedChat) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = chat.title,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    color = if (isSelectedChat) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = if (isSelectedChat) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    // System Stats Footer
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Bdd locale", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("SQLITE CONNECTÉ", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Mode Voix", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("SYNCHRONISÉ", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
                 }
-            )
-        },
-        contentWindowInsets = WindowInsets.navigationBars
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .background(MaterialTheme.colorScheme.background)
-        ) {
-            // Animated subtle background lines/glow
-            BackgroundGridGlow()
+            }
+        }
+    ) {
+        Scaffold(
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+            contentWindowInsets = WindowInsets.navigationBars
+        ) { paddingValues ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .background(MaterialTheme.colorScheme.background)
+            ) {
+                // Animated subtle background lines/glow
+                BackgroundGridGlow()
 
-            AnimatedContent(
-                targetState = viewModel.currentTab,
-                transitionSpec = {
-                    fadeIn(animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMedium)) +
-                    scaleIn(initialScale = 0.95f, animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy)) togetherWith
-                    fadeOut(animationSpec = tween(150))
-                },
-                label = "TabTransition"
-            ) { targetTab ->
-                when (targetTab) {
-                    "accueil" -> TabAccueil(viewModel, activeMessages)
-                    "conversations" -> TabConversations(viewModel, conversations)
-                    "recherche" -> TabRecherche(viewModel)
-                    "fichiers" -> TabFichiers(viewModel, uploadedFiles)
-                    "parametres" -> TabParametres(viewModel, memoryItems)
+                AnimatedContent(
+                    targetState = viewModel.currentTab,
+                    transitionSpec = {
+                        fadeIn(animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMedium)) +
+                        scaleIn(initialScale = 0.95f, animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy)) togetherWith
+                        fadeOut(animationSpec = tween(150))
+                    },
+                    label = "TabTransition"
+                ) { targetTab ->
+                    when (targetTab) {
+                        "accueil" -> TabAccueil(viewModel, activeMessages, onMenuClick = { scope.launch { drawerState.open() } })
+                        "conversations" -> TabConversations(viewModel, conversations, onMenuClick = { scope.launch { drawerState.open() } })
+                        "recherche" -> TabRecherche(viewModel, onMenuClick = { scope.launch { drawerState.open() } })
+                        "fichiers" -> TabFichiers(viewModel, uploadedFiles, onMenuClick = { scope.launch { drawerState.open() } })
+                        "parametres" -> TabParametres(viewModel, memoryItems, onMenuClick = { scope.launch { drawerState.open() } })
+                    }
                 }
             }
         }
@@ -260,7 +441,7 @@ fun JarvisBottomBar(
 // SCREEN 1: ACCUEIL (GLOWING SPHERE & CHAT)
 // ==========================================
 @Composable
-fun TabAccueil(viewModel: JarvisViewModel, messages: List<Message>) {
+fun TabAccueil(viewModel: JarvisViewModel, messages: List<Message>, onMenuClick: () -> Unit) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var inputQuery by remember { mutableStateOf("") }
@@ -288,20 +469,33 @@ fun TabAccueil(viewModel: JarvisViewModel, messages: List<Message>) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column {
-                Text(
-                    text = "JARVIS",
-                    fontSize = 22.sp,
-                    fontFamily = FontFamily.SansSerif,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 4.sp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Système d'intelligence active",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = onMenuClick,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Menu,
+                        contentDescription = "Menu principal",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = "JARVIS",
+                        fontSize = 22.sp,
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 4.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Système d'intelligence active",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                    )
+                }
             }
 
             // Quick New Chat Button
@@ -1145,7 +1339,7 @@ fun CodeBlockCard(code: String) {
 // SCREEN 2: DISCUSSIONS (CONVERSATIONS HISTORY)
 // ==========================================
 @Composable
-fun TabConversations(viewModel: JarvisViewModel, conversations: List<Conversation>) {
+fun TabConversations(viewModel: JarvisViewModel, conversations: List<Conversation>, onMenuClick: () -> Unit) {
     var searchQuery by remember { mutableStateOf("") }
     var renameTargetId by remember { mutableStateOf<String?>(null) }
     var renameInput by remember { mutableStateOf("") }
@@ -1167,13 +1361,28 @@ fun TabConversations(viewModel: JarvisViewModel, conversations: List<Conversatio
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {
         item {
-            Text(
-                "HISTORIQUE DES SESSIONS",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(vertical = 12.dp),
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                IconButton(
+                    onClick = onMenuClick,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Menu,
+                        contentDescription = "Menu principal",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "HISTORIQUE DES SESSIONS",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
 
             // Search Conversations Bar
             OutlinedTextField(
@@ -1397,7 +1606,7 @@ fun ConversationCard(
 // SCREEN 3: RECHERCHE (WEB SEARCH PORTAL)
 // ==========================================
 @Composable
-fun TabRecherche(viewModel: JarvisViewModel) {
+fun TabRecherche(viewModel: JarvisViewModel, onMenuClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1405,13 +1614,28 @@ fun TabRecherche(viewModel: JarvisViewModel) {
             .padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            "MOTEUR DE RECHERCHE IA",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(vertical = 12.dp),
-            color = MaterialTheme.colorScheme.primary
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+        ) {
+            IconButton(
+                onClick = onMenuClick,
+                modifier = Modifier.size(44.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Menu,
+                    contentDescription = "Menu principal",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                "MOTEUR DE RECHERCHE IA",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -1545,7 +1769,7 @@ fun TabRecherche(viewModel: JarvisViewModel) {
 // SCREEN 4: GESTION DES FICHIERS
 // ==========================================
 @Composable
-fun TabFichiers(viewModel: JarvisViewModel, files: List<UploadedFile>) {
+fun TabFichiers(viewModel: JarvisViewModel, files: List<UploadedFile>, onMenuClick: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isCreatingSimDoc by remember { mutableStateOf(false) }
@@ -1593,13 +1817,28 @@ fun TabFichiers(viewModel: JarvisViewModel, files: List<UploadedFile>) {
             .padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            "GESTIONNAIRE DE DOCUMENTS",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(vertical = 12.dp),
-            color = MaterialTheme.colorScheme.primary
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+        ) {
+            IconButton(
+                onClick = onMenuClick,
+                modifier = Modifier.size(44.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Menu,
+                    contentDescription = "Menu principal",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                "GESTIONNAIRE DE DOCUMENTS",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
 
         // Upload Button controls
         Row(
@@ -1899,7 +2138,7 @@ fun FileRowCard(
 // SCREEN 5: CONFIGURATION / PARAMÈTRES
 // ==========================================
 @Composable
-fun TabParametres(viewModel: JarvisViewModel, memoryItems: List<MemoryItem>) {
+fun TabParametres(viewModel: JarvisViewModel, memoryItems: List<MemoryItem>, onMenuClick: () -> Unit) {
     val context = LocalContext.current
     var isAddingMemory by remember { mutableStateOf(false) }
     var memoryInput by remember { mutableStateOf("") }
@@ -1913,13 +2152,28 @@ fun TabParametres(viewModel: JarvisViewModel, memoryItems: List<MemoryItem>) {
         contentPadding = PaddingValues(bottom = 24.dp)
     ) {
         item {
-            Text(
-                "CONFIGURATION DU SYSTÈME",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(vertical = 12.dp),
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                IconButton(
+                    onClick = onMenuClick,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Menu,
+                        contentDescription = "Menu principal",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "CONFIGURATION DU SYSTÈME",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
 
         // --- SECTION 1: PROFIL DE L'UTILISATEUR ---

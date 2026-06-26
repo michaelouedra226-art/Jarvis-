@@ -102,12 +102,19 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
 
         // Ensure there's at least one active conversation on start or default state
         viewModelScope.launch {
-            conversations.collectLatest { list ->
-                if (list.isEmpty() && activeConversationId.value == null) {
-                    startNewConversation()
-                } else if (activeConversationId.value == null && list.isNotEmpty()) {
+            // Give Room database a brief moment to load the first real list of conversations on start
+            delay(250)
+            val currentList = conversations.value
+            if (currentList.isEmpty()) {
+                startNewConversation()
+            } else {
+                val savedId = sharedPrefs.getString("active_conversation_id", null)
+                val chatExists = currentList.any { it.id == savedId }
+                if (savedId != null && chatExists) {
+                    activeConversationId.value = savedId
+                } else {
                     // Select first conversation that is not archived
-                    val defaultChat = list.firstOrNull { !it.isArchived } ?: list.first()
+                    val defaultChat = currentList.firstOrNull { !it.isArchived } ?: currentList.first()
                     activeConversationId.value = defaultChat.id
                 }
             }
@@ -233,6 +240,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
             repository.insertConversation(newChat)
             activeConversationId.value = newId
             activeTypewriterText = ""
+            sharedPrefs.edit().putString("active_conversation_id", newId).apply()
         }
     }
 
@@ -240,6 +248,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
         activeConversationId.value = id
         activeTypewriterText = ""
         stopSpeaking()
+        sharedPrefs.edit().putString("active_conversation_id", id).apply()
     }
 
     fun renameConversation(id: String, newTitle: String) {
