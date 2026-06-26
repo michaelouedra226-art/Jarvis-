@@ -1,0 +1,6 @@
+{
+  "name": "Jarvis",
+  "description": "Assistant IA futuriste, fluide et intelligent inspiré de Jarvis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
