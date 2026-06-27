@@ -1,0 +1,13 @@
+# Force Git to handle files with LF line endings in the repository
+* text=auto eol=lf
+
+# Explicitly mark binary files so Git never modifies them
+*.jar binary
+*.png binary
+*.jks binary
+*.keystore binary
+*.webp binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.zip binary
