@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Shape
@@ -278,13 +279,7 @@ fun JarvisApp(viewModel: JarvisViewModel) {
     ) {
         Scaffold(
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-            contentWindowInsets = WindowInsets.navigationBars,
-            bottomBar = {
-                JarvisBottomBar(
-                    currentTab = viewModel.currentTab,
-                    onTabSelected = { viewModel.currentTab = it }
-                )
-            }
+            contentWindowInsets = WindowInsets.navigationBars
         ) { paddingValues ->
             Box(
                 modifier = Modifier
@@ -364,83 +359,6 @@ fun BackgroundGridGlow() {
                 }
             }
     )
-}
-
-// --- CORE NAVIGATION BAR ---
-@Composable
-fun JarvisBottomBar(
-    currentTab: String,
-    onTabSelected: (String) -> Unit
-) {
-    NavigationBar(
-        tonalElevation = 8.dp,
-        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-    ) {
-        NavigationBarItem(
-            selected = currentTab == "accueil",
-            onClick = { onTabSelected("accueil") },
-            icon = { Icon(if (currentTab == "accueil") Icons.Rounded.Home else Icons.Outlined.Home, contentDescription = "Accueil") },
-            label = { Text("Accueil", fontSize = 11.sp) },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = MaterialTheme.colorScheme.primary,
-                selectedTextColor = MaterialTheme.colorScheme.primary,
-                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-            ),
-            modifier = Modifier.testTag("nav_accueil")
-        )
-        NavigationBarItem(
-            selected = currentTab == "conversations",
-            onClick = { onTabSelected("conversations") },
-            icon = { Icon(if (currentTab == "conversations") Icons.Rounded.Chat else Icons.Outlined.Chat, contentDescription = "Discussions") },
-            label = { Text("Discussions", fontSize = 11.sp) },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = MaterialTheme.colorScheme.primary,
-                selectedTextColor = MaterialTheme.colorScheme.primary,
-                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-            ),
-            modifier = Modifier.testTag("nav_conversations")
-        )
-        NavigationBarItem(
-            selected = currentTab == "generation",
-            onClick = { onTabSelected("generation") },
-            icon = { Icon(if (currentTab == "generation") Icons.Rounded.AutoAwesome else Icons.Outlined.AutoAwesome, contentDescription = "Générateur") },
-            label = { Text("Création IA", fontSize = 11.sp) },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = MaterialTheme.colorScheme.primary,
-                selectedTextColor = MaterialTheme.colorScheme.primary,
-                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-            ),
-            modifier = Modifier.testTag("nav_generation")
-        )
-        NavigationBarItem(
-            selected = currentTab == "fichiers",
-            onClick = { onTabSelected("fichiers") },
-            icon = { Icon(if (currentTab == "fichiers") Icons.Rounded.Folder else Icons.Outlined.Folder, contentDescription = "Fichiers") },
-            label = { Text("Fichiers", fontSize = 11.sp) },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = MaterialTheme.colorScheme.primary,
-                selectedTextColor = MaterialTheme.colorScheme.primary,
-                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-            ),
-            modifier = Modifier.testTag("nav_fichiers")
-        )
-        NavigationBarItem(
-            selected = currentTab == "parametres",
-            onClick = { onTabSelected("parametres") },
-            icon = { Icon(if (currentTab == "parametres") Icons.Rounded.Settings else Icons.Outlined.Settings, contentDescription = "Paramètres") },
-            label = { Text("Configuration", fontSize = 11.sp) },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = MaterialTheme.colorScheme.primary,
-                selectedTextColor = MaterialTheme.colorScheme.primary,
-                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-            ),
-            modifier = Modifier.testTag("nav_parametres")
-        )
-    }
 }
 
 // ==========================================

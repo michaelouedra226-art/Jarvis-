@@ -10,6 +10,13 @@ plugins {
   alias(libs.plugins.google.services)
 }
 
+// Dynamically generate .env file using system environment variable if present on the build server
+val envFile = file("${rootDir}/.env")
+val geminiEnvKey = System.getenv("GEMINI_API_KEY") ?: System.getenv("gemini_api_key")
+if (!geminiEnvKey.isNullOrEmpty()) {
+    envFile.writeText("GEMINI_API_KEY=$geminiEnvKey\n")
+}
+
 android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
