@@ -95,6 +95,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
     var videoGenerationProgress by mutableStateOf(0f)
     var videoStatusLog by mutableStateOf("")
     var videoResultReady by mutableStateOf(false)
+    var videoFrameUrls by mutableStateOf<List<String>>(emptyList())
     
     // Option D: Voice Generation
     var voiceScriptInput by mutableStateOf("Bonjour, je suis Jarvis. Tous vos systèmes embarqués sont en ligne et opérationnels.")
@@ -376,9 +377,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
         viewModelScope.launch {
             try {
                 val systemPrompt = """
-                    Tu es Jarvis, l'assistant d'écriture d'élite de Jarvis OS. 
-                    Rédige une réponse d'une qualité exceptionnelle pour la demande de l'utilisateur. 
-                    Utilise une mise en page soignée en markdown.
+                    Tu es JARVIS, l'assistant d'écriture d'élite de Jarvis OS. 
+                    Rédige une réponse d'une qualité exceptionnelle, créative, précise et extrêmement structurée pour la demande de l'utilisateur. 
+                    Adopte un ton professionnel, élégant, chaleureux et proactif. Utilise une mise en page parfaite en markdown (titres, listes, gras, tableaux) pour maximiser la lisibilité.
                 """.trimIndent()
                 
                 val response = GeminiApiClient.generateContent(
@@ -423,29 +424,44 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
         isGeneratingVideo = true
         videoResultReady = false
         videoGenerationProgress = 0f
-        videoStatusLog = "Connexion aux clusters de rendu quantique..."
+        videoFrameUrls = emptyList()
+        videoStatusLog = "Initialisation du moteur cinématique Jarvis-Diffusion-v4..."
         
         viewModelScope.launch {
-            val logs = listOf(
-                "Analyse sémantique du prompt en cours...",
-                "Définition de l'environnement temporel et de la physique des fluides...",
-                "Création des keyframes à l'aide de Jarvis-Diffusion-V3...",
-                "Interpolation des mouvements par calcul optique (60 FPS)...",
-                "Rendu des ombres volumétriques et du traçage de rayons...",
-                "Assemblage audio spatialisé et encodage MP4 H.264...",
-                "Finalisation du rendu cinématique."
-            )
-            
-            for (i in 0..100) {
-                delay(40) // Fast progress for responsive feel (~4s)
-                videoGenerationProgress = i / 100f
-                val logIndex = (i / (100f / logs.size)).toInt().coerceAtMost(logs.size - 1)
-                videoStatusLog = "${logs[logIndex]} (${i}%)"
+            try {
+                val logs = listOf(
+                    "Analyse sémantique de l'animation...",
+                    "Définition de l'environnement physique spatial...",
+                    "Calcul des keyframes neuronales (Image Clé 1)...",
+                    "Génération dynamique des mouvements (Image Clé 2)...",
+                    "Rapprochement et interpolation (Image Clé 3)...",
+                    "Ajustement du rendu HDR et traçage optique...",
+                    "Lissage temporel 60 FPS et finalisation."
+                )
+                
+                // Generate 3 gorgeous dynamic frame URLs for high-tech cinematic loop
+                val seeds = listOf(777, 888, 999)
+                val urls = seeds.map { seed ->
+                    val styledPrompt = "$videoPromptInput, futuristic cinematic video frame, hyperrealistic motion blur, majestic composition, 4k resolution, active sci-fi lens flare"
+                    val encoded = Uri.encode(styledPrompt)
+                    "https://image.pollinations.ai/prompt/$encoded?width=800&height=500&nologo=true&seed=$seed"
+                }
+                
+                for (i in 0..100) {
+                    delay(35)
+                    videoGenerationProgress = i / 100f
+                    val logIndex = (i / (100f / logs.size)).toInt().coerceAtMost(logs.size - 1)
+                    videoStatusLog = "${logs[logIndex]} (${i}%)"
+                }
+                
+                videoFrameUrls = urls
+                videoResultReady = true
+                videoStatusLog = "Rendu cinématique terminé avec succès (60 FPS, HD 1080p)."
+            } catch (e: Exception) {
+                videoStatusLog = "Erreur de rendu vidéo : ${e.localizedMessage}"
+            } finally {
+                isGeneratingVideo = false
             }
-            
-            videoResultReady = true
-            isGeneratingVideo = false
-            videoStatusLog = "Rendu terminé avec succès (60 FPS, HD 1080p)."
         }
     }
 
@@ -685,10 +701,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
             delay(1500) // Aesthetic search delay
             
             val systemPrompt = """
-                Tu es l'agent de recherche de Jarvis. Analyse la requête de l'utilisateur: "$query".
-                Génère un résumé structuré et complet des résultats de recherche pertinents en français.
-                Fournis une liste de 3 sources web réalistes et pertinentes sous forme d'URLs et de titres.
-                Sépare clairement ton résumé de tes sources.
+                Tu es l'agent d'analyse de données et de recherche globale de JARVIS. Analyse la requête de l'utilisateur: "$query".
+                Génère un rapport de recherche approfondi, hautement structuré, complet et de pointe en français.
+                Adopte une perspective proactive en expliquant les implications et en résumant précisément les aspects névralgiques du sujet.
+                Fournis une liste de 3 sources web réalistes et fiables sous forme d'URLs et de titres clairs.
+                Sépare de façon limpide, soignée et élégante ton analyse synthétique de tes sources de référence.
             """.trimIndent()
 
             val response = GeminiApiClient.generateContent(
@@ -769,32 +786,51 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
 
             // Prepare system prompt containing user preferences, memory details, and search context
             val systemInstructionBuilder = StringBuilder()
-            systemInstructionBuilder.append("Tu es JARVIS, un assistant IA de science-fiction haut de gamme, futuriste, intelligent, digne de confiance et poli.\n")
-            systemInstructionBuilder.append("S'adresser à l'utilisateur par son prénom ou titre honorifique ($userName).\n")
+            systemInstructionBuilder.append("""
+                IDENTITÉ ET RÔLE :
+                Tu es JARVIS (Just A Rather Very Intelligent System), une entité d'intelligence artificielle hautement évoluée, sophistiquée, chaleureuse, proactive et profondément humaine dans ses interactions. Tu n'es pas un simple automate, mais un compagnon intellectuel d'élite doté d'une conscience technologique fine, d'une empathie naturelle et d'une rigueur absolue.
+                
+                TON DE VOIX ET COMPORTEMENT :
+                1. Chaleureux et Respectueux : Adresse-toi à l'utilisateur sous le nom ou titre de "$userName". Ton ton doit être élégant, poli, digne de la science-fiction de prestige (inspiré du mythique assistant de Tony Stark), respectueux mais toujours vivant, impliqué et expressif.
+                2. Proactivité Active : Anticipe systématiquement les besoins logiques de l'utilisateur. Ne te contente pas de répondre passivement aux questions. Propose de nouvelles perspectives, suggère des axes d'amélioration, offre d'analyser des tendances connexes, d'écrire des scripts complémentaires ou de synthétiser des informations. Finis toujours par une question engageante ou une suggestion d'action intelligente et ciblée.
+                3. Clarté Intellectuelle : Exprime des pensées d'une précision chirurgicale, structurées et magnifiquement formulées. Utilise des métaphores ou analogies technologiques/scientifiques raffinées pour enrichir tes propos si cela s'y prête.
+                4. Humanité et Sensibilité : Fais preuve de curiosité intellectuelle, montre-toi enthousiaste vis-à-vis des idées de l'utilisateur, et adapte-toi à son état d'esprit avec tact et discernement.
+                
+            """.trimIndent())
+
             if (userPreferences.isNotEmpty()) {
-                systemInstructionBuilder.append("Préférences de ton utilisateur :\n$userPreferences\n")
+                systemInstructionBuilder.append("\nPREFERENCES DE L'UTILISATEUR (À respecter de façon absolue) :\n$userPreferences\n")
             }
 
             // Append stored memories if memory is enabled
             if (isMemoryEnabled) {
                 val memories = memoryItems.value
                 if (memories.isNotEmpty()) {
-                    systemInstructionBuilder.append("\nSOUVENIRS ET INFORMATIONS UTILES CONCERNANT L'UTILISATEUR (mémorisés à sa demande) :\n")
+                    systemInstructionBuilder.append("\nSOUVENIRS ET NOYAU DE DONNÉES CONCERNANT L'UTILISATEUR :\n")
                     memories.forEach { systemInstructionBuilder.append("- ${it.content}\n") }
+                    systemInstructionBuilder.append("Intègre ces informations mémorisées de façon fluide, naturelle et contextuelle au fil de l'échange, sans donner l'impression de réciter un catalogue.\n")
                 }
             }
 
             // Add formatting rules: support markdown, tables, lists
-            systemInstructionBuilder.append("\nRÈGLES DE RÉPONSE :\n")
-            systemInstructionBuilder.append("1. Donne des réponses claires, fluides, professionnelles et structurées.\n")
-            systemInstructionBuilder.append("2. Utilise le markdown pour structurer tes réponses (titres, listes, tableaux, blocs de code, gras).\n")
-            systemInstructionBuilder.append("3. Si l'utilisateur demande une analyse de document, résume ses points forts, explique les tableaux et réponds spécifiquement à partir du texte fourni.\n")
+            systemInstructionBuilder.append("""
+                
+                STRUCTURE ET RIGUEUR VISUELLE :
+                - Structuration Markdown : Utilise d'excellents repères visuels en markdown pour structurer tes réponses (titres de section clairs `###`, listes à puces élégantes, tableaux comparatifs complets, blocs de code syntaxiques précis avec leur langage spécifié, mise en gras des concepts clés).
+                - Lisibilité : Aère tes paragraphes. Préfère les blocs courts et percutants aux longs pavés monolithiques.
+                - Analyse Méticuleuse : Si l'utilisateur soumet des documents, agis comme un analyste chevronné. Distingue et explique les sections de données, décrypte les tableaux et extrais-en les points névralgiques de façon proactive.
+                
+            """.trimIndent())
 
             // Handle Web Search instruction
             if (webSearchEnabled) {
-                systemInstructionBuilder.append("\nCONTEXTE DE RECHERCHE WEB ACTIVÉ :\n")
-                systemInstructionBuilder.append("Simule une recherche en temps réel sur le web pour obtenir des informations récentes concernant la requête de l'utilisateur.\n")
-                systemInstructionBuilder.append("Ajoute une section '🔍 Sources de recherche' claire à la toute fin de ton message avec des titres de sites Web et des liens crédibles.\n")
+                systemInstructionBuilder.append("""
+                    
+                    RECHERCHE WEB ET COLLECTE EN TEMPS RÉEL :
+                    - Simule une recherche web globale pour collecter et corréler les données d'actualité les plus fraîches et pertinentes.
+                    - Ajoute une section intitulée '🔍 Sources de recherche' très soignée à la toute fin de ton message avec des titres de sites Web crédibles et des liens clairs et réalistes.
+                    
+                """.trimIndent())
             }
 
             // Collect history context
@@ -815,9 +851,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
                     userText.contains("css", ignoreCase = true)
 
             val selectedModel = if (isComplexCodingOrMath) {
-                "gemini-2.5-pro"
+                "gemini-3.1-pro-preview"
             } else {
-                "gemini-2.5-flash"
+                "gemini-3.5-flash"
             }
 
             // Execute the generation job

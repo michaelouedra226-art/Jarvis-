@@ -31,7 +31,7 @@ object GeminiApiClient {
         systemInstruction: String? = null,
         attachedFileBase64: String? = null,
         attachedFileMimeType: String? = null,
-        modelName: String = "gemini-2.5-flash",
+        modelName: String = "gemini-3.5-flash",
         customApiKey: String? = null
     ): String = withContext(Dispatchers.IO) {
         val apiKey = if (!customApiKey.isNullOrEmpty()) customApiKey else BuildConfig.GEMINI_API_KEY

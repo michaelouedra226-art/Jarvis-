@@ -8,6 +8,7 @@ import android.net.Uri
 import android.util.Base64
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -90,6 +91,18 @@ fun JarvisApp(viewModel: JarvisViewModel) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+
+    // Double press back to exit
+    var lastBackPressTime by remember { mutableStateOf(0L) }
+    BackHandler(enabled = true) {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastBackPressTime < 2000) {
+            (context as? android.app.Activity)?.finish()
+        } else {
+            lastBackPressTime = currentTime
+            Toast.makeText(context, "Appuyez à nouveau pour quitter", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -362,6 +375,41 @@ fun BackgroundGridGlow() {
             }
     )
 }
+
+@Composable
+fun Modifier.glassmorphic(
+    borderColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+    backgroundColor: Color = MaterialTheme.colorScheme.surface.copy(alpha = 0.45f),
+    shape: Shape = RoundedCornerShape(16.dp)
+): Modifier = this
+    .shadow(
+        elevation = 8.dp,
+        shape = shape,
+        clip = false,
+        ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+        spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+    )
+    .background(
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                backgroundColor.copy(alpha = 0.6f),
+                backgroundColor.copy(alpha = 0.3f)
+            )
+        ),
+        shape = shape
+    )
+    .border(
+        width = 1.dp,
+        brush = Brush.linearGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.4f),
+                borderColor.copy(alpha = 0.1f),
+                borderColor.copy(alpha = 0.35f),
+                Color.White.copy(alpha = 0.05f)
+            )
+        ),
+        shape = shape
+    )
 
 // ==========================================
 // SCREEN 1: ACCUEIL (GLOWING SPHERE & CHAT)
@@ -1774,13 +1822,15 @@ fun TabGeneration(viewModel: JarvisViewModel, onMenuClick: () -> Unit) {
         }
 
         // Render selected Option Area
-        Card(
+        Box(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                .fillMaxWidth()
+                .glassmorphic(
+                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                    backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(20.dp)
+                )
         ) {
             Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                 when (viewModel.selectedGenOption) {
@@ -2145,7 +2195,12 @@ fun OptionVideoTab(viewModel: JarvisViewModel, videoInput: String, onPromptChang
                     }
                 } else if (viewModel.videoResultReady) {
                     // Custom interactive procedural animation viewport representing the video loop
-                    ProceduralVideoViewport(prompt = videoInput, cameraStyle = cameraStyle, fps = fpsSelected)
+                    ProceduralVideoViewport(
+                        prompt = videoInput,
+                        cameraStyle = cameraStyle,
+                        fps = fpsSelected,
+                        frameUrls = viewModel.videoFrameUrls
+                    )
                 } else {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -2162,125 +2217,164 @@ fun OptionVideoTab(viewModel: JarvisViewModel, videoInput: String, onPromptChang
 
 // Procedural visual generator on Canvas representing the AI-generated video loop
 @Composable
-fun ProceduralVideoViewport(prompt: String, cameraStyle: String, fps: String) {
+fun ProceduralVideoViewport(
+    prompt: String,
+    cameraStyle: String,
+    fps: String,
+    frameUrls: List<String> = emptyList()
+) {
     val infiniteTransition = rememberInfiniteTransition()
     
     // Animate a phase representing progress in time
     val phase by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 2f * Math.PI.toFloat(),
-        animationSpec = infiniteRepeatable(tween(2500, easing = LinearEasing))
+        animationSpec = infiniteRepeatable(tween(3000, easing = LinearEasing))
     )
+    
+    // 3 FPS Stop-motion index loop
+    var activeFrameIndex by remember { mutableStateOf(0) }
+    if (frameUrls.isNotEmpty()) {
+        LaunchedEffect(frameUrls) {
+            while (true) {
+                delay(250) // Switch frame every 250ms
+                activeFrameIndex = (activeFrameIndex + 1) % frameUrls.size
+            }
+        }
+    }
     
     val primaryColor = MaterialTheme.colorScheme.primary
     val secondaryColor = MaterialTheme.colorScheme.secondary
-    
     val lowerPrompt = prompt.lowercase(Locale.ROOT)
     
     Box(modifier = Modifier.fillMaxSize()) {
+        // Render current video frame image from Pollinations if available!
+        if (frameUrls.isNotEmpty() && activeFrameIndex < frameUrls.size) {
+            coil.compose.AsyncImage(
+                model = frameUrls[activeFrameIndex],
+                contentDescription = "Flux vidéo généré",
+                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Crop
+            )
+        }
+        
+        // Overlay Canvas with glowing futuristic particles, telemetry scanlines, and reticles
         Canvas(modifier = Modifier.fillMaxSize()) {
             val width = size.width
             val height = size.height
             val centerX = width / 2
             val centerY = height / 2
             
-            // Background grid lines
-            val numLines = 8
+            // Draw grid overlay lines with some opacity
+            val numLines = 6
             for (i in 0..numLines) {
                 val y = i * (height / numLines)
                 drawLine(
-                    color = Color.White.copy(alpha = 0.04f),
+                    color = Color.White.copy(alpha = 0.08f),
                     start = Offset(0f, y),
                     end = Offset(width, y),
                     strokeWidth = 1f
                 )
             }
             
-            // Draw custom fluid visuals depending on the prompt words
-            when {
-                lowerPrompt.contains("espace") || lowerPrompt.contains("stars") || lowerPrompt.contains("space") -> {
-                    // Space theme: Draw glowing revolving galaxies
-                    val numStars = 60
-                    for (i in 0 until numStars) {
-                        val angle = (i * (360f / numStars)) * (Math.PI / 180f) + (phase * 0.15)
-                        val radius = (15f + i * 4.5f) * (if (cameraStyle == "Zoom") 1f + sin(phase * 0.1f) else 1f)
-                        val x = centerX + radius * cos(angle).toFloat()
-                        val y = centerY + radius * sin(angle).toFloat()
-                        
-                        val sizeStar = 1.5f + (i % 3) * 1.5f
-                        drawCircle(
-                            color = if (i % 2 == 0) primaryColor.copy(alpha = 0.7f) else Color.White,
-                            radius = sizeStar,
-                            center = Offset(x, y)
-                        )
-                    }
-                    
-                    // Core nebula
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(primaryColor.copy(alpha = 0.4f), Color.Transparent),
-                            center = Offset(centerX, centerY),
-                            radius = 90.dp.toPx()
-                        ),
-                        radius = 90.dp.toPx(),
-                        center = Offset(centerX, centerY)
-                    )
-                }
-                
-                lowerPrompt.contains("cyberpunk") || lowerPrompt.contains("tech") || lowerPrompt.contains("neon") -> {
-                    // Cyber theme: neon digital waves or grids
-                    val lines = 5
-                    for (l in 0 until lines) {
-                        val path = Path()
-                        val offsetMultiplier = 20.dp.toPx()
-                        path.moveTo(0f, centerY + sin(phase + l).toFloat() * offsetMultiplier)
-                        for (x in 0..10) {
-                            val px = (x / 10f) * width
-                            val py = centerY + sin(phase + l + x * 0.6f).toFloat() * offsetMultiplier + (l * 12.dp.toPx() - 30.dp.toPx())
-                            path.lineTo(px, py)
+            // Interactive drawing overlay
+            if (frameUrls.isEmpty()) {
+                // If no frame is generated, we draw the full screen high-tech abstract visuals
+                when {
+                    lowerPrompt.contains("espace") || lowerPrompt.contains("stars") || lowerPrompt.contains("space") -> {
+                        // Space theme: Glowing revolving galaxies
+                        val numStars = 60
+                        for (i in 0 until numStars) {
+                            val angle = (i * (360f / numStars)) * (Math.PI / 180f) + (phase * 0.15)
+                            val radius = (15f + i * 4.5f) * (if (cameraStyle == "Zoom") 1f + sin(phase * 0.1f) else 1f)
+                            val x = centerX + radius * cos(angle).toFloat()
+                            val y = centerY + radius * sin(angle).toFloat()
+                            
+                            val sizeStar = 1.5f + (i % 3) * 1.5f
+                            drawCircle(
+                                color = if (i % 2 == 0) primaryColor.copy(alpha = 0.7f) else Color.White,
+                                radius = sizeStar,
+                                center = Offset(x, y)
+                            )
                         }
-                        
-                        drawPath(
-                            path = path,
-                            color = if (l % 2 == 0) primaryColor else secondaryColor,
-                            style = Stroke(width = 1.5.dp.toPx()),
-                            alpha = 0.6f
-                        )
                     }
-                    
-                    // Futuristic telemetry lines
-                    drawLine(
-                        color = primaryColor.copy(alpha = 0.4f),
-                        start = Offset(centerX - 40.dp.toPx(), centerY),
-                        end = Offset(centerX + 40.dp.toPx(), centerY),
-                        strokeWidth = 2f
-                    )
-                    drawLine(
-                        color = primaryColor.copy(alpha = 0.4f),
-                        start = Offset(centerX, centerY - 40.dp.toPx()),
-                        end = Offset(centerX, centerY + 40.dp.toPx()),
-                        strokeWidth = 2f
-                    )
+                    lowerPrompt.contains("cyberpunk") || lowerPrompt.contains("tech") || lowerPrompt.contains("neon") -> {
+                        // Cyberpunk wave style
+                        val lines = 5
+                        for (l in 0 until lines) {
+                            val path = Path()
+                            val offsetMultiplier = 20.dp.toPx()
+                            path.moveTo(0f, centerY + sin(phase + l).toFloat() * offsetMultiplier)
+                            for (x in 0..10) {
+                                val px = (x / 10f) * width
+                                val py = centerY + sin(phase + l + x * 0.6f).toFloat() * offsetMultiplier + (l * 12.dp.toPx() - 30.dp.toPx())
+                                path.lineTo(px, py)
+                            }
+                            
+                            drawPath(
+                                path = path,
+                                color = if (l % 2 == 0) primaryColor else secondaryColor,
+                                style = Stroke(width = 1.5.dp.toPx()),
+                                alpha = 0.6f
+                            )
+                        }
+                    }
+                    else -> {
+                        // Default fluid vector circles
+                        val circles = 6
+                        for (c in 1..circles) {
+                            val angle = phase * (if (c % 2 == 0) 1f else -1f) * (0.4f + c * 0.1f)
+                            val radius = c * 24.dp.toPx() * (if (cameraStyle == "Zoom") 1.1f + sin(phase * 0.2f) * 0.1f else 1.0f)
+                            val x = centerX + cos(angle).toFloat() * (c * 3.dp.toPx())
+                            val y = centerY + sin(angle).toFloat() * (c * 3.dp.toPx())
+                            
+                            drawCircle(
+                                color = primaryColor,
+                                radius = radius,
+                                center = Offset(x, y),
+                                style = Stroke(width = 1.dp.toPx()),
+                                alpha = (1f - (c / (circles * 1.1f))).coerceIn(0f, 1f) * 0.4f
+                            )
+                        }
+                    }
                 }
+            } else {
+                // If images are rendered, draw elegant neon target metrics overlay
+                drawCircle(
+                    color = primaryColor.copy(alpha = 0.25f),
+                    radius = 35.dp.toPx(),
+                    center = Offset(centerX, centerY),
+                    style = Stroke(width = 1.dp.toPx())
+                )
                 
-                else -> {
-                    // Default fluid tech visual
-                    val circles = 6
-                    for (c in 1..circles) {
-                        val angle = phase * (if (c % 2 == 0) 1f else -1f) * (0.4f + c * 0.1f)
-                        val radius = c * 24.dp.toPx() * (if (cameraStyle == "Zoom") 1.1f + sin(phase * 0.2f) * 0.1f else 1.0f)
-                        val x = centerX + cos(angle).toFloat() * (c * 3.dp.toPx())
-                        val y = centerY + sin(angle).toFloat() * (c * 3.dp.toPx())
-                        
-                        drawCircle(
-                            color = primaryColor,
-                            radius = radius,
-                            center = Offset(x, y),
-                            style = Stroke(width = 1.dp.toPx()),
-                            alpha = (1f - (c / (circles * 1.1f))).coerceIn(0f, 1f) * 0.4f
-                        )
-                    }
-                }
+                // Outer bracket corners
+                val bracketSize = 15.dp.toPx()
+                val inset = 12.dp.toPx()
+                
+                // Top-Left corner bracket
+                drawLine(primaryColor.copy(alpha = 0.5f), Offset(inset, inset), Offset(inset + bracketSize, inset), 2.dp.toPx())
+                drawLine(primaryColor.copy(alpha = 0.5f), Offset(inset, inset), Offset(inset, inset + bracketSize), 2.dp.toPx())
+                
+                // Top-Right corner bracket
+                drawLine(primaryColor.copy(alpha = 0.5f), Offset(width - inset, inset), Offset(width - inset - bracketSize, inset), 2.dp.toPx())
+                drawLine(primaryColor.copy(alpha = 0.5f), Offset(width - inset, inset), Offset(width - inset, inset + bracketSize), 2.dp.toPx())
+                
+                // Bottom-Left corner bracket
+                drawLine(primaryColor.copy(alpha = 0.5f), Offset(inset, height - inset), Offset(inset + bracketSize, height - inset), 2.dp.toPx())
+                drawLine(primaryColor.copy(alpha = 0.5f), Offset(inset, height - inset), Offset(inset, height - inset - bracketSize), 2.dp.toPx())
+                
+                // Bottom-Right corner bracket
+                drawLine(primaryColor.copy(alpha = 0.5f), Offset(width - inset, height - inset), Offset(width - inset - bracketSize, height - inset), 2.dp.toPx())
+                drawLine(primaryColor.copy(alpha = 0.5f), Offset(width - inset, height - inset), Offset(width - inset, height - inset - bracketSize), 2.dp.toPx())
+                
+                // Sweeping laser radar line
+                val radarY = centerY + sin(phase).toFloat() * centerY
+                drawLine(
+                    color = secondaryColor.copy(alpha = 0.35f),
+                    start = Offset(0f, radarY),
+                    end = Offset(width, radarY),
+                    strokeWidth = 1.5.dp.toPx()
+                )
             }
         }
         
@@ -2288,21 +2382,22 @@ fun ProceduralVideoViewport(prompt: String, cameraStyle: String, fps: String) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(8.dp)
+                .padding(12.dp)
         ) {
+            val cameraLabel = if (frameUrls.isNotEmpty()) "LOCKED [AI LOOP]" else "ACTIVE [$cameraStyle]"
             Text(
-                "CAMERA: ACTIVE [$cameraStyle]\nFPS: $fps [STABLE]\nMODEL: " + "JARVIS DIFFUSION v3",
+                "CAMERA: $cameraLabel\nFPS: $fps [STABLE]\nMODEL: JARVIS DIFFUSION v4",
                 fontSize = 8.sp,
                 fontFamily = FontFamily.Monospace,
-                color = Color.White.copy(alpha = 0.5f),
+                color = Color.White.copy(alpha = 0.7f),
                 modifier = Modifier.align(Alignment.TopStart)
             )
             
             Text(
-                "RENDER PORT: HD1080p\nLOOP ACTIVE (60fps)",
+                "RENDER PORT: HD1080p\nCLIP COMPILATION ACTIVE (60fps)",
                 fontSize = 8.sp,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.primary,
+                color = primaryColor,
                 modifier = Modifier.align(Alignment.BottomEnd),
                 textAlign = TextAlign.End
             )
@@ -2894,9 +2989,14 @@ fun TabParametres(viewModel: JarvisViewModel, memoryItems: List<MemoryItem>, onM
         // --- SECTION 1: PROFIL DE L'UTILISATEUR ---
         item {
             SettingsSectionTitle("Identité de l'Utilisateur")
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .glassmorphic(
+                        borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                        backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(16.dp)
+                    )
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
@@ -2925,10 +3025,14 @@ fun TabParametres(viewModel: JarvisViewModel, memoryItems: List<MemoryItem>, onM
         // --- SECTION 1.5: CONFIGURATION DE LA CLÉ API ---
         item {
             SettingsSectionTitle("Configuration de la Clé API Gemini")
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .glassmorphic(
+                        borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                        backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(16.dp)
+                    )
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
