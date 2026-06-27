@@ -120,6 +120,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
     var themeMode by mutableStateOf(sharedPrefs.getString("theme_mode", "dark") ?: "dark") // "dark", "light", "system"
     var accentColorIndex by mutableStateOf(sharedPrefs.getInt("accent_color_index", 0)) // 0: Cyan, 1: Red/Orange, 2: Purple, 3: Green, 4: Gold
     var textSizeMultiplier by mutableStateOf(sharedPrefs.getFloat("text_size_multiplier", 1.0f))
+    var geminiApiKey by mutableStateOf(sharedPrefs.getString("gemini_api_key", "") ?: "")
 
     // --- Attached File state for the active message entry ---
     var selectedAttachedFile by mutableStateOf<UploadedFile?>(null)
@@ -383,7 +384,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
                 val response = GeminiApiClient.generateContent(
                     prompt = textPromptInput,
                     systemInstruction = systemPrompt,
-                    modelName = "gemini-3.5-flash"
+                    modelName = "gemini-3.5-flash",
+                    customApiKey = geminiApiKey
                 )
                 textGenResult = response
             } catch (e: Exception) {
@@ -516,6 +518,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
     fun updateTextSizeSetting(multiplier: Float) {
         textSizeMultiplier = multiplier
         sharedPrefs.edit().putFloat("text_size_multiplier", multiplier).apply()
+    }
+
+    fun updateGeminiApiKey(key: String) {
+        geminiApiKey = key
+        sharedPrefs.edit().putString("gemini_api_key", key).apply()
     }
 
     // --- DATABASE ACTIONS ---
@@ -687,7 +694,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
             val response = GeminiApiClient.generateContent(
                 prompt = "Effectue une recherche approfondie et génère un rapport complet pour la requête: $query",
                 systemInstruction = systemPrompt,
-                modelName = "gemini-3.5-flash"
+                modelName = "gemini-3.5-flash",
+                customApiKey = geminiApiKey
             )
 
             val cleanResponse = response.trim()
@@ -849,7 +857,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
                         systemInstruction = systemInstructionBuilder.toString(),
                         attachedFileBase64 = imageBase64,
                         attachedFileMimeType = imageMimeType,
-                        modelName = selectedModel
+                        modelName = selectedModel,
+                        customApiKey = geminiApiKey
                     )
 
                     // Progressively display response (Typewriter effect)

@@ -56,6 +56,8 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -2916,6 +2918,87 @@ fun TabParametres(viewModel: JarvisViewModel, memoryItems: List<MemoryItem>, onM
                         shape = RoundedCornerShape(12.dp),
                         maxLines = 4
                     )
+                }
+            }
+        }
+
+        // --- SECTION 1.5: CONFIGURATION DE LA CLÉ API ---
+        item {
+            SettingsSectionTitle("Configuration de la Clé API Gemini")
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Si l'application n'arrive pas à se connecter à l'API Gemini par défaut, vous pouvez entrer votre propre clé API ci-dessous. Elle sera enregistrée de manière sécurisée et locale dans votre appareil.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    var isKeyVisible by remember { mutableStateOf(false) }
+
+                    OutlinedTextField(
+                        value = viewModel.geminiApiKey,
+                        onValueChange = { viewModel.updateGeminiApiKey(it) },
+                        label = { Text("Clé API Gemini (GEMINI_API_KEY)") },
+                        placeholder = { Text("AIzaSy...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        visualTransformation = if (isKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        leadingIcon = {
+                            Icon(Icons.Rounded.VpnKey, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        },
+                        trailingIcon = {
+                            IconButton(onClick = { isKeyVisible = !isKeyVisible }) {
+                                Icon(
+                                    imageVector = if (isKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                    contentDescription = if (isKeyVisible) "Masquer la clé" else "Afficher la clé"
+                                )
+                            }
+                        }
+                    )
+
+                    if (viewModel.geminiApiKey.isNotEmpty()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CheckCircle,
+                                contentDescription = null,
+                                tint = GreenPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                "Clé personnalisée active (Prend le dessus sur les secrets)",
+                                fontSize = 11.sp,
+                                color = GreenPrimary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                "Vide : Utilise la clé par défaut injectée à la compilation",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
                 }
             }
         }

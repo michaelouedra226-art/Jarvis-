@@ -31,11 +31,12 @@ object GeminiApiClient {
         systemInstruction: String? = null,
         attachedFileBase64: String? = null,
         attachedFileMimeType: String? = null,
-        modelName: String = "gemini-2.5-flash"
+        modelName: String = "gemini-2.5-flash",
+        customApiKey: String? = null
     ): String = withContext(Dispatchers.IO) {
-        val apiKey = BuildConfig.GEMINI_API_KEY
+        val apiKey = if (!customApiKey.isNullOrEmpty()) customApiKey else BuildConfig.GEMINI_API_KEY
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
-            return@withContext "Erreur : Clé API Gemini manquante. Veuillez configurer GEMINI_API_KEY dans les secrets d'AI Studio."
+            return@withContext "Erreur : Clé API Gemini manquante. Veuillez la configurer dans l'onglet Configuration (Paramètres de l'application)."
         }
 
         val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
