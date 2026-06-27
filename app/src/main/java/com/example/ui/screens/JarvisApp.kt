@@ -149,7 +149,7 @@ fun JarvisApp(viewModel: JarvisViewModel) {
                     val navItems = listOf(
                         Triple("accueil", "Accueil", Icons.Rounded.Home),
                         Triple("conversations", "Discussions", Icons.Rounded.ChatBubble),
-                        Triple("recherche", "Recherche IA", Icons.Rounded.Search),
+                        Triple("generation", "Générateur IA", Icons.Rounded.AutoAwesome),
                         Triple("fichiers", "Documents", Icons.Rounded.Folder),
                         Triple("parametres", "Configuration", Icons.Rounded.Settings)
                     )
@@ -278,7 +278,13 @@ fun JarvisApp(viewModel: JarvisViewModel) {
     ) {
         Scaffold(
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-            contentWindowInsets = WindowInsets.navigationBars
+            contentWindowInsets = WindowInsets.navigationBars,
+            bottomBar = {
+                JarvisBottomBar(
+                    currentTab = viewModel.currentTab,
+                    onTabSelected = { viewModel.currentTab = it }
+                )
+            }
         ) { paddingValues ->
             Box(
                 modifier = Modifier
@@ -301,7 +307,7 @@ fun JarvisApp(viewModel: JarvisViewModel) {
                     when (targetTab) {
                         "accueil" -> TabAccueil(viewModel, activeMessages, onMenuClick = { scope.launch { drawerState.open() } })
                         "conversations" -> TabConversations(viewModel, conversations, onMenuClick = { scope.launch { drawerState.open() } })
-                        "recherche" -> TabRecherche(viewModel, onMenuClick = { scope.launch { drawerState.open() } })
+                        "generation" -> TabGeneration(viewModel, onMenuClick = { scope.launch { drawerState.open() } })
                         "fichiers" -> TabFichiers(viewModel, uploadedFiles, onMenuClick = { scope.launch { drawerState.open() } })
                         "parametres" -> TabParametres(viewModel, memoryItems, onMenuClick = { scope.launch { drawerState.open() } })
                     }
@@ -399,16 +405,16 @@ fun JarvisBottomBar(
             modifier = Modifier.testTag("nav_conversations")
         )
         NavigationBarItem(
-            selected = currentTab == "recherche",
-            onClick = { onTabSelected("recherche") },
-            icon = { Icon(if (currentTab == "recherche") Icons.Rounded.Search else Icons.Outlined.Search, contentDescription = "Recherche") },
-            label = { Text("Recherche", fontSize = 11.sp) },
+            selected = currentTab == "generation",
+            onClick = { onTabSelected("generation") },
+            icon = { Icon(if (currentTab == "generation") Icons.Rounded.AutoAwesome else Icons.Outlined.AutoAwesome, contentDescription = "Générateur") },
+            label = { Text("Création IA", fontSize = 11.sp) },
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = MaterialTheme.colorScheme.primary,
                 selectedTextColor = MaterialTheme.colorScheme.primary,
                 indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
             ),
-            modifier = Modifier.testTag("nav_recherche")
+            modifier = Modifier.testTag("nav_generation")
         )
         NavigationBarItem(
             selected = currentTab == "fichiers",
@@ -446,6 +452,17 @@ fun TabAccueil(viewModel: JarvisViewModel, messages: List<Message>, onMenuClick:
     val scope = rememberCoroutineScope()
     var inputQuery by remember { mutableStateOf("") }
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val context = LocalContext.current
+    val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            viewModel.startRealSpeechRecognition()
+        } else {
+            viewModel.isDictating = true
+            viewModel.voiceModeState = "listening"
+        }
+    }
 
     // Keep list scrolled to bottom on new messages
     LaunchedEffect(messages.size, viewModel.activeTypewriterText) {
@@ -734,9 +751,17 @@ fun TabAccueil(viewModel: JarvisViewModel, messages: List<Message>, onMenuClick:
                         viewModel.sendMessage(inputQuery)
                         inputQuery = ""
                     } else {
-                        // Launch Speech Dictation simulation
-                        viewModel.isDictating = true
-                        viewModel.voiceModeState = "listening"
+                        // Check if RECORD_AUDIO permission is granted
+                        val hasRecordPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                            context,
+                            android.Manifest.permission.RECORD_AUDIO
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        
+                        if (hasRecordPermission) {
+                            viewModel.startRealSpeechRecognition()
+                        } else {
+                            recordAudioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                        }
                     }
                 },
                 modifier = Modifier
@@ -771,6 +796,11 @@ fun TabAccueil(viewModel: JarvisViewModel, messages: List<Message>, onMenuClick:
                 viewModel.voiceModeState = "idle"
             }
         )
+    }
+
+    // --- FULL SCREEN REALSPEECH INTERACTIVE DICTATION ---
+    if (viewModel.isSpeechListening) {
+        VoiceListeningActiveDialog(viewModel = viewModel)
     }
 }
 
@@ -916,6 +946,142 @@ fun VoiceDictationDialog(
                     Icon(Icons.Rounded.Check, contentDescription = null)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Confirmer l'envoi")
+                }
+            }
+        }
+    }
+}
+
+// --- VOICE LISTENING ACTIVE DIALOG FOR REAL SPEECH RECOGNITION ---
+@Composable
+fun VoiceListeningActiveDialog(
+    viewModel: JarvisViewModel
+) {
+    val infiniteTransition = rememberInfiniteTransition()
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = 1.2f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse)
+    )
+    val rotationAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(5000, easing = LinearEasing))
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.94f))
+            .clickable(enabled = false) {}, // Prevent backclicks
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(24.dp)
+        ) {
+            Text(
+                "MOTEUR VOCAL JARVIS ACTIF",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.primary,
+                letterSpacing = 2.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace
+            )
+            
+            Text(
+                "ÉCOUTE ACTIVE DEPUIS LE MICROPHONE",
+                fontSize = 10.sp,
+                color = Color.White.copy(alpha = 0.5f),
+                modifier = Modifier.padding(top = 4.dp, bottom = 24.dp)
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Glowing pulsing voice sphere
+            Box(contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .size(170.dp)
+                        .scale(pulseScale)
+                        .rotate(rotationAngle)
+                        .drawBehind {
+                            drawCircle(
+                                color = CyanPrimary.copy(alpha = 0.2f),
+                                radius = size.width / 2,
+                                style = Stroke(2.dp.toPx())
+                            )
+                        }
+                )
+
+                GlowingSphere(state = "listening", modifier = Modifier.size(115.dp))
+                
+                Icon(
+                    imageVector = Icons.Rounded.Mic,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(40.dp))
+
+            // Realtime Transcribing Text Box
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = if (viewModel.recognizedLiveText.trim().isEmpty()) {
+                            "\" Parlez maintenant, je vous écoute... \""
+                        } else {
+                            "\" ${viewModel.recognizedLiveText} \""
+                        },
+                        fontSize = 16.sp,
+                        fontStyle = FontStyle.Italic,
+                        color = if (viewModel.recognizedLiveText.trim().isEmpty()) Color.White.copy(alpha = 0.5f) else Color.White,
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Waveform representing active capture
+                    LiveAudioWaveform(isActive = true)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(40.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        viewModel.stopRealSpeechRecognition()
+                    },
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Annuler")
+                }
+
+                Button(
+                    onClick = {
+                        viewModel.stopRealSpeechRecognition()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Rounded.Stop, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Traiter la commande")
                 }
             }
         }
@@ -1603,10 +1769,21 @@ fun ConversationCard(
 }
 
 // ==========================================
-// SCREEN 3: RECHERCHE (WEB SEARCH PORTAL)
+// SCREEN 3: TAB GENERATION (MULTIMODAL AI CENTER)
 // ==========================================
 @Composable
-fun TabRecherche(viewModel: JarvisViewModel, onMenuClick: () -> Unit) {
+fun TabGeneration(viewModel: JarvisViewModel, onMenuClick: () -> Unit) {
+    val context = LocalContext.current
+    var textInputState by remember { mutableStateOf(viewModel.textPromptInput) }
+    var imageInputState by remember { mutableStateOf(viewModel.imagePromptInput) }
+    var videoInputState by remember { mutableStateOf(viewModel.videoPromptInput) }
+    var voiceInputState by remember { mutableStateOf(viewModel.voiceScriptInput) }
+
+    // Sync state when changed externally
+    LaunchedEffect(viewModel.imagePromptInput) {
+        imageInputState = viewModel.imagePromptInput
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1614,6 +1791,7 @@ fun TabRecherche(viewModel: JarvisViewModel, onMenuClick: () -> Unit) {
             .padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // Tab Header
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
@@ -1630,138 +1808,755 @@ fun TabRecherche(viewModel: JarvisViewModel, onMenuClick: () -> Unit) {
             }
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                "MOTEUR DE RECHERCHE IA",
+                "CENTRE DE CRÉATION MULTIMODALE",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
         }
 
+        // Horizontal Selection Chips for A, B, C, D options
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val options = listOf(
+                Pair("A", "Texte IA"),
+                Pair("B", "Image IA"),
+                Pair("C", "Vidéo Synthèse"),
+                Pair("D", "Voix Jarvis")
+            )
+            options.forEach { (code, label) ->
+                val isSelected = viewModel.selectedGenOption == code
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { viewModel.selectedGenOption = code },
+                    label = { Text(label, fontSize = 12.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                        selectedLabelColor = MaterialTheme.colorScheme.primary,
+                        selectedLeadingIconColor = MaterialTheme.colorScheme.primary
+                    ),
+                    leadingIcon = {
+                        val icon = when (code) {
+                            "A" -> Icons.Rounded.Description
+                            "B" -> Icons.Rounded.Image
+                            "C" -> Icons.Rounded.Videocam
+                            else -> Icons.Rounded.VolumeUp
+                        }
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+                    }
+                )
+            }
+        }
+
+        // Render selected Option Area
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    "Recherche approfondie en temps réel",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    "Jarvis va interroger internet, synthétiser les informations et extraire les meilleures sources de recherche.",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                when (viewModel.selectedGenOption) {
+                    "A" -> OptionTextTab(viewModel, textInputState, onPromptChange = { textInputState = it })
+                    "B" -> OptionImageTab(viewModel, imageInputState, onPromptChange = { imageInputState = it })
+                    "C" -> OptionVideoTab(viewModel, videoInputState, onPromptChange = { videoInputState = it })
+                    "D" -> OptionVoiceTab(viewModel, voiceInputState, onScriptChange = { voiceInputState = it })
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+    }
+}
 
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = viewModel.searchTabQuery,
-                        onValueChange = { viewModel.searchTabQuery = it },
-                        placeholder = { Text("Météo à Paris, SpaceX, IA en 2026...") },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { viewModel.executeSearchTabQuery(viewModel.searchTabQuery) })
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(
-                        onClick = { viewModel.executeSearchTabQuery(viewModel.searchTabQuery) },
-                        modifier = Modifier
-                            .size(50.dp)
-                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
-                    ) {
-                        Icon(Icons.Rounded.Search, contentDescription = "Lancer", tint = MaterialTheme.colorScheme.onPrimary)
+@Composable
+fun OptionTextTab(viewModel: JarvisViewModel, textInput: String, onPromptChange: (String) -> Unit) {
+    val context = LocalContext.current
+    val presets = listOf("Algorithme Python", "Rapport de Synthèse", "Poème de l'Espace", "Email Pro")
+    
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text("Option A : Générateur de Texte", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text("Rédigez ou laissez Jarvis composer à l'aide de l'IA.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        OutlinedTextField(
+            value = textInput,
+            onValueChange = {
+                onPromptChange(it)
+                viewModel.textPromptInput = it
+            },
+            placeholder = { Text("Écrivez votre prompt ou instruction...") },
+            modifier = Modifier.fillMaxWidth().height(100.dp),
+            shape = RoundedCornerShape(12.dp),
+            maxLines = 4
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        // Preset chips
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            presets.forEach { preset ->
+                SuggestionChip(
+                    onClick = {
+                        val prompt = when (preset) {
+                            "Algorithme Python" -> "Rédige une fonction Python récursive optimisée pour trier des objets complexes par attribut."
+                            "Rapport de Synthèse" -> "Rédige un compte rendu de réunion professionnelle sur la sécurité informatique."
+                            "Poème de l'Espace" -> "Écris un poème néo-rétro futuriste sur un explorateur de trous noirs."
+                            else -> "Rédige un mail de suivi poli mais assertif après un entretien d'embauche."
+                        }
+                        onPromptChange(prompt)
+                        viewModel.textPromptInput = prompt
+                    },
+                    label = { Text(preset, fontSize = 11.sp) }
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        Button(
+            onClick = { viewModel.generateGenText() },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !viewModel.isGeneratingText && textInput.trim().isNotEmpty()
+        ) {
+            if (viewModel.isGeneratingText) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Synthèse en cours...")
+            } else {
+                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Lancer la Génération")
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // Result viewer
+        Card(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+        ) {
+            Box(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+                if (viewModel.textGenResult.isNotEmpty()) {
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("RÉSULTAT", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            IconButton(
+                                onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("Jarvis Text Gen", viewModel.textGenResult))
+                                    Toast.makeText(context, "Texte copié !", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copier", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                            MarkdownTextViewer(text = viewModel.textGenResult, sizeMultiplier = viewModel.textSizeMultiplier)
+                        }
+                    }
+                } else {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Le texte généré s'affichera ici.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                     }
                 }
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Results log view
-        if (viewModel.isSearchingWebTab) {
-            Box(modifier = Modifier.weight(1f)) {
-                WebSearchSkeleton()
+@Composable
+fun OptionImageTab(viewModel: JarvisViewModel, imageInput: String, onPromptChange: (String) -> Unit) {
+    val context = LocalContext.current
+    val styles = listOf("Cyberpunk", "Fantasy", "Realist", "Anime", "3D")
+    
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text("Option B : Générateur d'Images", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text("Créez de magnifiques illustrations IA via Pollinations.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        OutlinedTextField(
+            value = imageInput,
+            onValueChange = {
+                onPromptChange(it)
+                viewModel.imagePromptInput = it
+            },
+            placeholder = { Text("Décrivez l'image à générer...") },
+            modifier = Modifier.fillMaxWidth().height(60.dp),
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        // Preset styles
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            styles.forEach { style ->
+                FilterChip(
+                    selected = viewModel.imageStylePreset == style,
+                    onClick = { viewModel.imageStylePreset = style },
+                    label = { Text(style, fontSize = 11.sp) }
+                )
             }
-        } else if (viewModel.searchLogs.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Rounded.TravelExplore, contentDescription = null, modifier = Modifier.size(60.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text("Aucune recherche effectuée dans cette session.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        }
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        Button(
+            onClick = { viewModel.generateGenImage() },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !viewModel.isGeneratingImage && imageInput.trim().isNotEmpty()
+        ) {
+            if (viewModel.isGeneratingImage) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Calcul des vecteurs d'images...")
+            } else {
+                Icon(Icons.Rounded.Image, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Générer l'Image")
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // Image box
+        Card(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+        ) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                if (viewModel.isGeneratingImage) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Modélisation de la diffusion...", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+                } else if (viewModel.generatedImageUrl.isNotEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        coil.compose.AsyncImage(
+                            model = viewModel.generatedImageUrl,
+                            contentDescription = viewModel.imagePromptInput,
+                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                        
+                        // Download & Share Actions overlay
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(12.dp)
+                                .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    Toast.makeText(context, "Image enregistrée dans la galerie (Simulation)", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Rounded.Download, contentDescription = "Télécharger", tint = Color.White, modifier = Modifier.size(18.dp))
+                            }
+                            IconButton(
+                                onClick = {
+                                    Toast.makeText(context, "Lien d'image partagé !", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Rounded.Share, contentDescription = "Partager", tint = Color.White, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Rounded.Image, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("L'image générée s'affichera ici.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                    }
                 }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
-            ) {
-                items(viewModel.searchLogs) { log ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        }
+    }
+}
+
+@Composable
+fun OptionVideoTab(viewModel: JarvisViewModel, videoInput: String, onPromptChange: (String) -> Unit) {
+    var fpsSelected by remember { mutableStateOf("60 FPS") }
+    var cameraStyle by remember { mutableStateOf("Zoom") }
+    
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text("Option C : Rendu de Vidéo", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text("Générez des animations spatiales et tech en temps réel.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        OutlinedTextField(
+            value = videoInput,
+            onValueChange = {
+                onPromptChange(it)
+                viewModel.videoPromptInput = it
+            },
+            placeholder = { Text("Décrivez le clip vidéo (ex : Espace, Neon, Nature)...") },
+            modifier = Modifier.fillMaxWidth().height(60.dp),
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        // Video configs
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val fpsOptions = listOf("24 FPS", "30 FPS", "60 FPS")
+            val cameraOptions = listOf("Zoom", "Pan", "Orbit")
+            
+            Box(modifier = Modifier.weight(1f)) {
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    fpsOptions.forEach { option ->
+                        FilterChip(
+                            selected = fpsSelected == option,
+                            onClick = { fpsSelected = option },
+                            label = { Text(option, fontSize = 10.sp) }
+                        )
+                    }
+                }
+            }
+            
+            Box(modifier = Modifier.weight(1f)) {
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    cameraOptions.forEach { option ->
+                        FilterChip(
+                            selected = cameraStyle == option,
+                            onClick = { cameraStyle = option },
+                            label = { Text(option, fontSize = 10.sp) }
+                        )
+                    }
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(10.dp))
+        
+        Button(
+            onClick = { viewModel.generateGenVideo() },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !viewModel.isGeneratingVideo && videoInput.trim().isNotEmpty()
+        ) {
+            if (viewModel.isGeneratingVideo) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Calcul d'interpolarisation...")
+            } else {
+                Icon(Icons.Rounded.Videocam, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Synthétiser la Vidéo")
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        // Video monitor viewport or rendering status
+        Card(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF070913)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+        ) {
+            Box(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+                if (viewModel.isGeneratingVideo) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = log.query,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // Synthesized response
-                            MarkdownTextViewer(text = log.summary, sizeMultiplier = viewModel.textSizeMultiplier)
-
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text("Sources extraites :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            log.sources.forEach { sourceUrl ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 2.dp)
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
-                                        .padding(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(Icons.Rounded.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = sourceUrl,
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
+                        Text(
+                            "QUANTUM RENDER ENGINE",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            letterSpacing = 2.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        LinearProgressIndicator(
+                            progress = { viewModel.videoGenerationProgress },
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = Color.White.copy(alpha = 0.1f)
+                        )
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = viewModel.videoStatusLog,
+                            fontSize = 10.sp,
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontFamily = FontFamily.Monospace,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else if (viewModel.videoResultReady) {
+                    // Custom interactive procedural animation viewport representing the video loop
+                    ProceduralVideoViewport(prompt = videoInput, cameraStyle = cameraStyle, fps = fpsSelected)
+                } else {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Rounded.Videocam, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("Le viewport de rendu s'affichera ici.", fontSize = 12.sp, color = Color.White.copy(alpha = 0.4f))
                         }
                     }
                 }
             }
         }
+    }
+}
+
+// Procedural visual generator on Canvas representing the AI-generated video loop
+@Composable
+fun ProceduralVideoViewport(prompt: String, cameraStyle: String, fps: String) {
+    val infiniteTransition = rememberInfiniteTransition()
+    
+    // Animate a phase representing progress in time
+    val phase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2f * Math.PI.toFloat(),
+        animationSpec = infiniteRepeatable(tween(2500, easing = LinearEasing))
+    )
+    
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
+    
+    val lowerPrompt = prompt.lowercase(Locale.ROOT)
+    
+    Box(modifier = Modifier.fillMaxSize()) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val width = size.width
+            val height = size.height
+            val centerX = width / 2
+            val centerY = height / 2
+            
+            // Background grid lines
+            val numLines = 8
+            for (i in 0..numLines) {
+                val y = i * (height / numLines)
+                drawLine(
+                    color = Color.White.copy(alpha = 0.04f),
+                    start = Offset(0f, y),
+                    end = Offset(width, y),
+                    strokeWidth = 1f
+                )
+            }
+            
+            // Draw custom fluid visuals depending on the prompt words
+            when {
+                lowerPrompt.contains("espace") || lowerPrompt.contains("stars") || lowerPrompt.contains("space") -> {
+                    // Space theme: Draw glowing revolving galaxies
+                    val numStars = 60
+                    for (i in 0 until numStars) {
+                        val angle = (i * (360f / numStars)) * (Math.PI / 180f) + (phase * 0.15)
+                        val radius = (15f + i * 4.5f) * (if (cameraStyle == "Zoom") 1f + sin(phase * 0.1f) else 1f)
+                        val x = centerX + radius * cos(angle).toFloat()
+                        val y = centerY + radius * sin(angle).toFloat()
+                        
+                        val sizeStar = 1.5f + (i % 3) * 1.5f
+                        drawCircle(
+                            color = if (i % 2 == 0) primaryColor.copy(alpha = 0.7f) else Color.White,
+                            radius = sizeStar,
+                            center = Offset(x, y)
+                        )
+                    }
+                    
+                    // Core nebula
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(primaryColor.copy(alpha = 0.4f), Color.Transparent),
+                            center = Offset(centerX, centerY),
+                            radius = 90.dp.toPx()
+                        ),
+                        radius = 90.dp.toPx(),
+                        center = Offset(centerX, centerY)
+                    )
+                }
+                
+                lowerPrompt.contains("cyberpunk") || lowerPrompt.contains("tech") || lowerPrompt.contains("neon") -> {
+                    // Cyber theme: neon digital waves or grids
+                    val lines = 5
+                    for (l in 0 until lines) {
+                        val path = Path()
+                        val offsetMultiplier = 20.dp.toPx()
+                        path.moveTo(0f, centerY + sin(phase + l).toFloat() * offsetMultiplier)
+                        for (x in 0..10) {
+                            val px = (x / 10f) * width
+                            val py = centerY + sin(phase + l + x * 0.6f).toFloat() * offsetMultiplier + (l * 12.dp.toPx() - 30.dp.toPx())
+                            path.lineTo(px, py)
+                        }
+                        
+                        drawPath(
+                            path = path,
+                            color = if (l % 2 == 0) primaryColor else secondaryColor,
+                            style = Stroke(width = 1.5.dp.toPx()),
+                            alpha = 0.6f
+                        )
+                    }
+                    
+                    // Futuristic telemetry lines
+                    drawLine(
+                        color = primaryColor.copy(alpha = 0.4f),
+                        start = Offset(centerX - 40.dp.toPx(), centerY),
+                        end = Offset(centerX + 40.dp.toPx(), centerY),
+                        strokeWidth = 2f
+                    )
+                    drawLine(
+                        color = primaryColor.copy(alpha = 0.4f),
+                        start = Offset(centerX, centerY - 40.dp.toPx()),
+                        end = Offset(centerX, centerY + 40.dp.toPx()),
+                        strokeWidth = 2f
+                    )
+                }
+                
+                else -> {
+                    // Default fluid tech visual
+                    val circles = 6
+                    for (c in 1..circles) {
+                        val angle = phase * (if (c % 2 == 0) 1f else -1f) * (0.4f + c * 0.1f)
+                        val radius = c * 24.dp.toPx() * (if (cameraStyle == "Zoom") 1.1f + sin(phase * 0.2f) * 0.1f else 1.0f)
+                        val x = centerX + cos(angle).toFloat() * (c * 3.dp.toPx())
+                        val y = centerY + sin(angle).toFloat() * (c * 3.dp.toPx())
+                        
+                        drawCircle(
+                            color = primaryColor,
+                            radius = radius,
+                            center = Offset(x, y),
+                            style = Stroke(width = 1.dp.toPx()),
+                            alpha = (1f - (c / (circles * 1.1f))).coerceIn(0f, 1f) * 0.4f
+                        )
+                    }
+                }
+            }
+        }
+        
+        // Metadata / Sci-fi overlay metrics
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp)
+        ) {
+            Text(
+                "CAMERA: ACTIVE [$cameraStyle]\nFPS: $fps [STABLE]\nMODEL: " + "JARVIS DIFFUSION v3",
+                fontSize = 8.sp,
+                fontFamily = FontFamily.Monospace,
+                color = Color.White.copy(alpha = 0.5f),
+                modifier = Modifier.align(Alignment.TopStart)
+            )
+            
+            Text(
+                "RENDER PORT: HD1080p\nLOOP ACTIVE (60fps)",
+                fontSize = 8.sp,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.align(Alignment.BottomEnd),
+                textAlign = TextAlign.End
+            )
+        }
+    }
+}
+
+@Composable
+fun OptionVoiceTab(viewModel: JarvisViewModel, voiceInput: String, onScriptChange: (String) -> Unit) {
+    val context = LocalContext.current
+    val profiles = listOf("Jarvis", "Friday", "Cyber Synth", "Hologram")
+    
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text("Option D : Générateur de Voix", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text("Convertissez du texte en répliques audio Jarvis personnalisées.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        OutlinedTextField(
+            value = voiceInput,
+            onValueChange = {
+                onScriptChange(it)
+                viewModel.voiceScriptInput = it
+            },
+            placeholder = { Text("Entrez la réplique que l'IA doit dicter...") },
+            modifier = Modifier.fillMaxWidth().height(65.dp),
+            shape = RoundedCornerShape(12.dp),
+            maxLines = 3
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        // Profiles selector
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            profiles.forEach { profile ->
+                FilterChip(
+                    selected = viewModel.selectedVoiceProfile == profile,
+                    onClick = { viewModel.selectedVoiceProfile = profile },
+                    label = { Text(profile, fontSize = 11.sp) }
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(10.dp))
+        
+        // Speed & Pitch Sliders
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Hauteur (Pitch) : x${"%.2f".format(viewModel.voicePitchMultiplier)}", fontSize = 11.sp, color = Color.White)
+                Slider(
+                    value = viewModel.voicePitchMultiplier,
+                    onValueChange = { viewModel.voicePitchMultiplier = it },
+                    valueRange = 0.5f..1.5f,
+                    modifier = Modifier.width(180.dp).height(20.dp)
+                )
+            }
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Vitesse (Rate) : x${"%.2f".format(viewModel.voiceRateMultiplier)}", fontSize = 11.sp, color = Color.White)
+                Slider(
+                    value = viewModel.voiceRateMultiplier,
+                    onValueChange = { viewModel.voiceRateMultiplier = it },
+                    valueRange = 0.5f..1.5f,
+                    modifier = Modifier.width(180.dp).height(20.dp)
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        Button(
+            onClick = { viewModel.generateGenVoice() },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !viewModel.isGeneratingVoice && voiceInput.trim().isNotEmpty()
+        ) {
+            if (viewModel.isGeneratingVoice) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Modulation de fréquence...")
+            } else {
+                Icon(Icons.Rounded.VolumeUp, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Synthétiser la Voix")
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(14.dp))
+        
+        // Voice visualization box with standard canvas drawing sine waves
+        Card(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF060913)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+        ) {
+            Box(modifier = Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "FRÉQUENCE AUDIO DE SYNTHÈSE",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 2.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    
+                    // Waveform active or idle canvas
+                    LiveAudioWaveform(isActive = viewModel.isGeneratingVoice || viewModel.isSpeakingTts)
+                }
+            }
+        }
+    }
+}
+
+// Sine wave oscilloscope drawn dynamically on Canvas
+@Composable
+fun LiveAudioWaveform(isActive: Boolean) {
+    val infiniteTransition = rememberInfiniteTransition()
+    val phase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2f * Math.PI.toFloat(),
+        animationSpec = infiniteRepeatable(tween(1000, easing = LinearEasing))
+    )
+    
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
+    
+    Canvas(modifier = Modifier.fillMaxWidth().height(80.dp)) {
+        val width = size.width
+        val height = size.height
+        val centerY = height / 2
+        
+        // Draw 3 layers of sine waves with different speeds & amplitudes
+        val numWaves = 3
+        for (w in 0 until numWaves) {
+            val path = Path()
+            val amp = if (isActive) (20.dp.toPx() - w * 4.dp.toPx()) else 3.dp.toPx()
+            val frequency = if (isActive) (0.015f + w * 0.005f) else 0.008f
+            val speed = if (isActive) (phase * (1f + w * 0.5f)) else (phase * 0.2f)
+            
+            path.moveTo(0f, centerY)
+            for (x in 0..width.toInt() step 5) {
+                val dx = x.toFloat()
+                val dy = centerY + sin(dx * frequency + speed).toFloat() * amp
+                path.lineTo(dx, dy)
+            }
+            
+            drawPath(
+                path = path,
+                color = if (w == 0) primaryColor else if (w == 1) secondaryColor else Color.White,
+                style = Stroke(width = (2.dp.toPx() - w * 0.5.dp.toPx())),
+                alpha = if (isActive) (0.8f - w * 0.2f) else 0.25f
+            )
+        }
+        
+        // Center line (grid)
+        drawLine(
+            color = Color.White.copy(alpha = 0.08f),
+            start = Offset(0f, centerY),
+            end = Offset(width, centerY),
+            strokeWidth = 1f
+        )
     }
 }
 
