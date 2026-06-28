@@ -21,7 +21,11 @@ import com.example.data.*
 import com.example.network.GeminiApiClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.File
 import java.util.*
+import java.util.concurrent.TimeUnit
 
 class JarvisViewModel(application: Application) : AndroidViewModel(application), TextToSpeech.OnInitListener {
 
@@ -87,6 +91,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
     var generatedImageUrl by mutableStateOf("")
     var isGeneratingImage by mutableStateOf(false)
     var imageStylePreset by mutableStateOf("Cyberpunk") // "Cyberpunk", "Fantasy", "Realist", "Anime", "3D"
+    var imageGenerationError by mutableStateOf("")
     val generatedImagesHistory = mutableStateListOf<Pair<String, String>>() // Pair of (prompt, url)
     
     // Option C: Video Generation
@@ -397,21 +402,75 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
         }
     }
 
-    // Option B: Image Generation (Pollinations AI)
+    // Option B: Image Generation (Pollinations AI with robust local caching & retries)
     fun generateGenImage() {
         if (imagePromptInput.trim().isEmpty()) return
         isGeneratingImage = true
         generatedImageUrl = ""
+        imageGenerationError = ""
         viewModelScope.launch {
             try {
-                delay(1200) // Aesthetic delay for progress simulation
                 val finalPrompt = "$imagePromptInput, style $imageStylePreset, highly detailed digital art, 4k resolution, cinematic lighting, epic composition"
                 val encodedPrompt = Uri.encode(finalPrompt)
-                val url = "https://image.pollinations.ai/prompt/$encodedPrompt?width=1024&height=1024&nologo=true&seed=${Random().nextInt(100000)}"
-                generatedImageUrl = url
-                generatedImagesHistory.add(0, Pair(imagePromptInput, url))
+                
+                // Let's try downloading the image with retries and alternate model endpoints
+                var success = false
+                var localFilePath = ""
+                var lastErr = ""
+                
+                // We try flux first (high quality), turbo, then default Pollinations
+                val urlsToTry = listOf(
+                    "https://image.pollinations.ai/prompt/$encodedPrompt?width=1024&height=1024&nologo=true&seed=${Random().nextInt(100000)}&model=flux",
+                    "https://image.pollinations.ai/prompt/$encodedPrompt?width=1024&height=1024&nologo=true&seed=${Random().nextInt(100000)}&model=turbo",
+                    "https://image.pollinations.ai/prompt/$encodedPrompt?width=1024&height=1024&nologo=true&seed=${Random().nextInt(100000)}"
+                )
+                
+                val okHttpClient = OkHttpClient.Builder()
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(30, TimeUnit.SECONDS)
+                    .build()
+                
+                for (url in urlsToTry) {
+                    var attempts = 0
+                    while (attempts < 2) {
+                        try {
+                            val request = Request.Builder().url(url).build()
+                            okHttpClient.newCall(request).execute().use { response ->
+                                if (response.isSuccessful) {
+                                    val bytes = response.body?.bytes()
+                                    if (bytes != null && bytes.isNotEmpty()) {
+                                        val context = getApplication<Application>().applicationContext
+                                        val cacheDir = context.cacheDir
+                                        val file = File(cacheDir, "generated_image_${System.currentTimeMillis()}.jpg")
+                                        file.writeBytes(bytes)
+                                        localFilePath = file.absolutePath
+                                        success = true
+                                    }
+                                } else {
+                                    lastErr = "HTTP ${response.code}: ${response.message}"
+                                }
+                            }
+                        } catch (e: Exception) {
+                            lastErr = e.localizedMessage ?: "Erreur de connexion inconnue"
+                        }
+                        
+                        if (success) break
+                        attempts++
+                        delay(500)
+                    }
+                    if (success) break
+                }
+                
+                if (success && localFilePath.isNotEmpty()) {
+                    generatedImageUrl = "file://$localFilePath"
+                    generatedImagesHistory.add(0, Pair(imagePromptInput, "file://$localFilePath"))
+                } else {
+                    imageGenerationError = lastErr
+                    Log.e("JarvisViewModel", "Failed to generate/download image: $lastErr")
+                }
             } catch (e: Exception) {
                 Log.e("JarvisViewModel", "Image generation error", e)
+                imageGenerationError = e.localizedMessage ?: "Erreur inconnue"
             } finally {
                 isGeneratingImage = false
             }

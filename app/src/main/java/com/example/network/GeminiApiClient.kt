@@ -5,6 +5,7 @@ import android.util.Base64
 import android.util.Log
 import com.example.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -39,103 +40,143 @@ object GeminiApiClient {
             return@withContext "Erreur : Clé API Gemini manquante. Veuillez la configurer dans l'onglet Configuration (Paramètres de l'application)."
         }
 
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
+        // Setup fallbacks for models if they hit 503 / 429
+        val modelsToTry = mutableListOf<String>()
+        modelsToTry.add(modelName)
+        if (modelName == "gemini-3.5-flash") {
+            modelsToTry.add("gemini-flash-latest")
+            modelsToTry.add("gemini-3.1-flash-lite-preview")
+        } else if (modelName == "gemini-3.1-pro-preview") {
+            modelsToTry.add("gemini-3.5-flash")
+            modelsToTry.add("gemini-flash-latest")
+        }
 
-        try {
-            val root = JSONObject()
+        var lastError = ""
 
-            // Contents array
-            val contentsArray = JSONArray()
+        for (currentModel in modelsToTry) {
+            var attempt = 0
+            val maxAttempts = 3
+            while (attempt < maxAttempts) {
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$currentModel:generateContent?key=$apiKey"
+                try {
+                    val root = JSONObject()
 
-            // 1. History
-            for ((role, text) in history) {
-                val contentObj = JSONObject()
-                contentObj.put("role", if (role == "user") "user" else "model")
-                
-                val partsArray = JSONArray()
-                val partObj = JSONObject()
-                partObj.put("text", text)
-                partsArray.put(partObj)
-                
-                contentObj.put("parts", partsArray)
-                contentsArray.put(contentObj)
-            }
+                    // Contents array
+                    val contentsArray = JSONArray()
 
-            // 2. Current User Message (prompt + file if any)
-            val currentUserContentObj = JSONObject()
-            currentUserContentObj.put("role", "user")
-            val partsArray = JSONArray()
+                    // 1. History
+                    for ((role, text) in history) {
+                        val contentObj = JSONObject()
+                        contentObj.put("role", if (role == "user") "user" else "model")
+                        
+                        val partsArray = JSONArray()
+                        val partObj = JSONObject()
+                        partObj.put("text", text)
+                        partsArray.put(partObj)
+                        
+                        contentObj.put("parts", partsArray)
+                        contentsArray.put(contentObj)
+                    }
 
-            // File part if any
-            if (attachedFileBase64 != null && attachedFileMimeType != null) {
-                val filePart = JSONObject()
-                val inlineData = JSONObject()
-                inlineData.put("mimeType", attachedFileMimeType)
-                inlineData.put("data", attachedFileBase64)
-                filePart.put("inlineData", inlineData)
-                partsArray.put(filePart)
-            }
+                    // 2. Current User Message (prompt + file if any)
+                    val currentUserContentObj = JSONObject()
+                    currentUserContentObj.put("role", "user")
+                    val partsArray = JSONArray()
 
-            // Text part
-            val textPart = JSONObject()
-            textPart.put("text", prompt)
-            partsArray.put(textPart)
+                    // File part if any
+                    if (attachedFileBase64 != null && attachedFileMimeType != null) {
+                        val filePart = JSONObject()
+                        val inlineData = JSONObject()
+                        inlineData.put("mimeType", attachedFileMimeType)
+                        inlineData.put("data", attachedFileBase64)
+                        filePart.put("inlineData", inlineData)
+                        partsArray.put(filePart)
+                    }
 
-            currentUserContentObj.put("parts", partsArray)
-            contentsArray.put(currentUserContentObj)
+                    // Text part
+                    val textPart = JSONObject()
+                    textPart.put("text", prompt)
+                    partsArray.put(textPart)
 
-            root.put("contents", contentsArray)
+                    currentUserContentObj.put("parts", partsArray)
+                    contentsArray.put(currentUserContentObj)
 
-            // System Instruction
-            if (systemInstruction != null) {
-                val sysInstObj = JSONObject()
-                val sysInstParts = JSONArray()
-                val sysInstPart = JSONObject()
-                sysInstPart.put("text", systemInstruction)
-                sysInstParts.put(sysInstPart)
-                sysInstObj.put("parts", sysInstParts)
-                root.put("systemInstruction", sysInstObj)
-            }
+                    root.put("contents", contentsArray)
 
-            // Generation Config
-            val generationConfig = JSONObject()
-            generationConfig.put("temperature", 0.7)
-            root.put("generationConfig", generationConfig)
+                    // System Instruction
+                    if (systemInstruction != null) {
+                        val sysInstObj = JSONObject()
+                        val sysInstParts = JSONArray()
+                        val sysInstPart = JSONObject()
+                        sysInstPart.put("text", systemInstruction)
+                        sysInstParts.put(sysInstPart)
+                        sysInstObj.put("parts", sysInstParts)
+                        root.put("systemInstruction", sysInstObj)
+                    }
 
-            val requestBodyJson = root.toString()
-            Log.d(TAG, "Request: $requestBodyJson")
+                    // Generation Config
+                    val generationConfig = JSONObject()
+                    generationConfig.put("temperature", 0.7)
+                    root.put("generationConfig", generationConfig)
 
-            val request = Request.Builder()
-                .url(url)
-                .post(requestBodyJson.toRequestBody(mediaType))
-                .build()
+                    val requestBodyJson = root.toString()
+                    Log.d(TAG, "Request (Model: $currentModel, Attempt: $attempt): $requestBodyJson")
 
-            client.newCall(request).execute().use { response ->
-                val responseBody = response.body?.string() ?: ""
-                Log.d(TAG, "Response Code: ${response.code}, Body: $responseBody")
+                    val request = Request.Builder()
+                        .url(url)
+                        .post(requestBodyJson.toRequestBody(mediaType))
+                        .build()
 
-                if (!response.isSuccessful) {
-                    return@withContext "Erreur d'API (${response.code}) : ${response.message}\n$responseBody"
-                }
+                    client.newCall(request).execute().use { response ->
+                        val responseBody = response.body?.string() ?: ""
+                        Log.d(TAG, "Response Code: ${response.code}, Body: $responseBody")
 
-                val responseJson = JSONObject(responseBody)
-                val candidates = responseJson.optJSONArray("candidates")
-                if (candidates != null && candidates.length() > 0) {
-                    val firstCandidate = candidates.getJSONObject(0)
-                    val content = firstCandidate.optJSONObject("content")
-                    if (content != null) {
-                        val parts = content.optJSONArray("parts")
-                        if (parts != null && parts.length() > 0) {
-                            val text = parts.getJSONObject(0).optString("text")
-                            return@withContext text
+                        if (response.isSuccessful) {
+                            val responseJson = JSONObject(responseBody)
+                            val candidates = responseJson.optJSONArray("candidates")
+                            if (candidates != null && candidates.length() > 0) {
+                                val firstCandidate = candidates.getJSONObject(0)
+                                val content = firstCandidate.optJSONObject("content")
+                                if (content != null) {
+                                    val parts = content.optJSONArray("parts")
+                                    if (parts != null && parts.length() > 0) {
+                                        val text = parts.getJSONObject(0).optString("text")
+                                        return@withContext text
+                                    }
+                                }
+                            }
+                            return@withContext "Désolé, aucune réponse n'a été générée."
+                        } else {
+                            lastError = "Erreur d'API (${response.code}) : ${response.message}\n$responseBody"
+                            Log.w(TAG, "Attempt $attempt failed for model $currentModel with code ${response.code}")
+                            
+                            // If it's a server overloaded (503), rate limit (429), or standard server issue (5xx), we retry
+                            if (response.code == 503 || response.code == 429 || response.code >= 500) {
+                                attempt++
+                                if (attempt < maxAttempts) {
+                                    val delayTime = 1000L * attempt
+                                    Log.i(TAG, "Retrying $currentModel in ${delayTime}ms...")
+                                    delay(delayTime)
+                                    continue
+                                }
+                            } else {
+                                // Non-retryable client error (like 400, 403, 404), break to fallback
+                                break
+                            }
                         }
                     }
+                } catch (e: Exception) {
+                    lastError = "Erreur de connexion : ${e.localizedMessage}"
+                    Log.e(TAG, "Exception on attempt $attempt for model $currentModel", e)
+                    attempt++
+                    if (attempt < maxAttempts) {
+                        delay(1000L * attempt)
+                    }
                 }
-                return@withContext "Désolé, aucune réponse n'a été générée."
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error generating content", e)
-            return@withContext "Erreur de connexion : ${e.localizedMessage}"
+            Log.w(TAG, "Model $currentModel failed completely. Trying next fallback model if available.")
         }
+
+        return@withContext "Désolé, Jarvis a rencontré des difficultés de connexion avec l'API après plusieurs essais.\n\nDétails de l'erreur :\n$lastError"
     }
 }

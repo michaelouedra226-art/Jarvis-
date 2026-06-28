@@ -16,6 +16,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -92,15 +93,22 @@ fun JarvisApp(viewModel: JarvisViewModel) {
     val snackbarHostState = remember { SnackbarHostState() }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
-    // Double press back to exit
+    // Smart back press handling inspired by user request
     var lastBackPressTime by remember { mutableStateOf(0L) }
+    val isDrawerOpen = drawerState.isOpen
     BackHandler(enabled = true) {
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastBackPressTime < 2000) {
-            (context as? android.app.Activity)?.finish()
+        if (isDrawerOpen) {
+            scope.launch { drawerState.close() }
+        } else if (viewModel.currentTab != "accueil") {
+            viewModel.currentTab = "accueil"
         } else {
-            lastBackPressTime = currentTime
-            Toast.makeText(context, "Appuyez à nouveau pour quitter", Toast.LENGTH_SHORT).show()
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastBackPressTime < 2000) {
+                (context as? android.app.Activity)?.finish()
+            } else {
+                lastBackPressTime = currentTime
+                Toast.makeText(context, "Appuyez à nouveau pour quitter", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -108,16 +116,21 @@ fun JarvisApp(viewModel: JarvisViewModel) {
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(
-                drawerContainerColor = MaterialTheme.colorScheme.surface,
-                drawerTonalElevation = 8.dp,
+                drawerContainerColor = Color.Transparent,
+                drawerTonalElevation = 0.dp,
                 modifier = Modifier
                     .width(300.dp)
                     .fillMaxHeight()
+                    .padding(vertical = 12.dp, horizontal = 8.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surface)
+                        .glassmorphic(
+                            borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                            backgroundColor = MaterialTheme.colorScheme.background.copy(alpha = 0.7f),
+                            shape = RoundedCornerShape(24.dp)
+                        )
                         .padding(16.dp)
                 ) {
                     // Drawer Header
@@ -308,9 +321,21 @@ fun JarvisApp(viewModel: JarvisViewModel) {
                 AnimatedContent(
                     targetState = viewModel.currentTab,
                     transitionSpec = {
-                        fadeIn(animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMedium)) +
-                        scaleIn(initialScale = 0.95f, animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy)) togetherWith
-                        fadeOut(animationSpec = tween(150))
+                        val enterTransition = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 400f)) +
+                                slideInHorizontally(
+                                    initialOffsetX = { width -> (width * 0.12f).toInt() },
+                                    animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
+                                ) +
+                                scaleIn(initialScale = 0.92f, animationSpec = spring(dampingRatio = 0.65f, stiffness = 350f))
+                        
+                        val exitTransition = fadeOut(animationSpec = tween(200)) +
+                                slideOutHorizontally(
+                                    targetOffsetX = { width -> -(width * 0.08f).toInt() },
+                                    animationSpec = tween(200)
+                                ) +
+                                scaleOut(targetScale = 0.96f, animationSpec = tween(200))
+
+                        enterTransition togetherWith exitTransition
                     },
                     label = "TabTransition"
                 ) { targetTab ->
@@ -410,6 +435,48 @@ fun Modifier.glassmorphic(
         ),
         shape = shape
     )
+
+@Composable
+fun Modifier.framerMotionEntry(
+    delayMillis: Int = 0,
+    durationMillis: Int = 400,
+    stiffness: Float = 350f,
+    dampingRatio: Float = 0.65f
+): Modifier {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (delayMillis > 0) {
+            delay(delayMillis.toLong())
+        }
+        visible = true
+    }
+    
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis, easing = FastOutSlowInEasing),
+        label = "framerAlpha"
+    )
+    
+    val scale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.88f,
+        animationSpec = spring(dampingRatio = dampingRatio, stiffness = stiffness),
+        label = "framerScale"
+    )
+    
+    val translateY by animateFloatAsState(
+        targetValue = if (visible) 0f else 45f,
+        animationSpec = spring(dampingRatio = dampingRatio, stiffness = stiffness),
+        label = "framerTranslate"
+    )
+    
+    return this
+        .graphicsLayer {
+            this.alpha = alpha
+            this.scaleX = scale
+            this.scaleY = scale
+            this.translationY = translateY
+        }
+}
 
 // ==========================================
 // SCREEN 1: ACCUEIL (GLOWING SPHERE & CHAT)
@@ -515,6 +582,7 @@ fun TabAccueil(viewModel: JarvisViewModel, messages: List<Message>, onMenuClick:
                         state = viewModel.voiceModeState,
                         modifier = Modifier
                             .size(220.dp)
+                            .framerMotionEntry(delayMillis = 50)
                             .testTag("glowing_sphere")
                     )
 
@@ -524,7 +592,8 @@ fun TabAccueil(viewModel: JarvisViewModel, messages: List<Message>, onMenuClick:
                         text = "En attente d'instructions",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onBackground
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.framerMotionEntry(delayMillis = 150)
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
@@ -532,7 +601,9 @@ fun TabAccueil(viewModel: JarvisViewModel, messages: List<Message>, onMenuClick:
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 32.dp)
+                        modifier = Modifier
+                            .framerMotionEntry(delayMillis = 250)
+                            .padding(horizontal = 32.dp)
                     )
                 }
             } else {
@@ -682,13 +753,16 @@ fun TabAccueil(viewModel: JarvisViewModel, messages: List<Message>, onMenuClick:
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), RoundedCornerShape(24.dp))
+                    .glassmorphic(
+                        borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                        backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(24.dp)
+                    )
                     .testTag("chat_input"),
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
-                    disabledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     disabledIndicatorColor = Color.Transparent
@@ -1130,28 +1204,23 @@ fun MessageBubble(
         }
 
         // --- MESSAGE CONTENT CONTAINER ---
-        Card(
-            shape = RoundedCornerShape(
-                topStart = 16.dp,
-                topEnd = 16.dp,
-                bottomStart = if (isUser) 16.dp else 2.dp,
-                bottomEnd = if (isUser) 2.dp else 16.dp
-            ),
-            border = BorderStroke(
-                width = 1.dp,
-                color = if (isUser) MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)
-                else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-            ),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isUser) {
-                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f)
-                } else {
-                    MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                }
-            ),
+        val bubbleShape = RoundedCornerShape(
+            topStart = 16.dp,
+            topEnd = 16.dp,
+            bottomStart = if (isUser) 16.dp else 2.dp,
+            bottomEnd = if (isUser) 2.dp else 16.dp
+        )
+        Box(
             modifier = Modifier
                 .fillMaxWidth(0.9f)
                 .testTag("message_bubble")
+                .glassmorphic(
+                    borderColor = if (isUser) MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f)
+                    else MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                    backgroundColor = if (isUser) MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f)
+                    else MaterialTheme.colorScheme.surface.copy(alpha = 0.2f),
+                    shape = bubbleShape
+                )
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
                 // Attached File Preview inside Message if any
@@ -1522,13 +1591,15 @@ fun TabConversations(viewModel: JarvisViewModel, conversations: List<Conversatio
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Rechercher une discussion...") },
+                placeholder = { Text("Rechercher une discussion...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)) },
                 modifier = Modifier.fillMaxWidth(),
-                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                    unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.25f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.25f)
                 ),
                 singleLine = true
             )
@@ -1556,22 +1627,28 @@ fun TabConversations(viewModel: JarvisViewModel, conversations: List<Conversatio
                 Text("Discussions actives", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             }
 
-            items(filteredList) { chat ->
-                ConversationCard(
-                    chat = chat,
-                    activeId = viewModel.activeConversationId.value,
-                    onSelect = {
-                        viewModel.selectConversation(chat.id)
-                        viewModel.currentTab = "accueil"
-                    },
-                    onDelete = { viewModel.deleteConversation(chat.id) },
-                    onPin = { viewModel.togglePinConversation(chat.id) },
-                    onArchive = { viewModel.toggleArchiveConversation(chat.id) },
-                    onRenameTrigger = {
-                        renameTargetId = chat.id
-                        renameInput = chat.title
-                    }
-                )
+            itemsIndexed(filteredList) { index, chat ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .framerMotionEntry(delayMillis = (index * 40).coerceAtMost(240))
+                ) {
+                    ConversationCard(
+                        chat = chat,
+                        activeId = viewModel.activeConversationId.value,
+                        onSelect = {
+                            viewModel.selectConversation(chat.id)
+                            viewModel.currentTab = "accueil"
+                        },
+                        onDelete = { viewModel.deleteConversation(chat.id) },
+                        onPin = { viewModel.togglePinConversation(chat.id) },
+                        onArchive = { viewModel.toggleArchiveConversation(chat.id) },
+                        onRenameTrigger = {
+                            renameTargetId = chat.id
+                            renameInput = chat.title
+                        }
+                    )
+                }
             }
         }
 
@@ -1580,22 +1657,28 @@ fun TabConversations(viewModel: JarvisViewModel, conversations: List<Conversatio
                 Text("Discussions archivées", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextGray)
             }
 
-            items(archivedList) { chat ->
-                ConversationCard(
-                    chat = chat,
-                    activeId = viewModel.activeConversationId.value,
-                    onSelect = {
-                        viewModel.selectConversation(chat.id)
-                        viewModel.currentTab = "accueil"
-                    },
-                    onDelete = { viewModel.deleteConversation(chat.id) },
-                    onPin = { viewModel.togglePinConversation(chat.id) },
-                    onArchive = { viewModel.toggleArchiveConversation(chat.id) },
-                    onRenameTrigger = {
-                        renameTargetId = chat.id
-                        renameInput = chat.title
-                    }
-                )
+            itemsIndexed(archivedList) { index, chat ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .framerMotionEntry(delayMillis = (index * 40).coerceAtMost(240))
+                ) {
+                    ConversationCard(
+                        chat = chat,
+                        activeId = viewModel.activeConversationId.value,
+                        onSelect = {
+                            viewModel.selectConversation(chat.id)
+                            viewModel.currentTab = "accueil"
+                        },
+                        onDelete = { viewModel.deleteConversation(chat.id) },
+                        onPin = { viewModel.togglePinConversation(chat.id) },
+                        onArchive = { viewModel.toggleArchiveConversation(chat.id) },
+                        onRenameTrigger = {
+                            renameTargetId = chat.id
+                            renameInput = chat.title
+                        }
+                    )
+                }
             }
         }
     }
@@ -1646,21 +1729,16 @@ fun ConversationCard(
 ) {
     val isActive = chat.id == activeId
 
-    Card(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onSelect() }
-            .testTag("conversation_card"),
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(
-            1.dp,
-            if (isActive) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-        ),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-            else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
-        )
+            .testTag("conversation_card")
+            .glassmorphic(
+                borderColor = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                backgroundColor = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.25f),
+                shape = RoundedCornerShape(14.dp)
+            )
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
@@ -1794,7 +1872,6 @@ fun TabGeneration(viewModel: JarvisViewModel, onMenuClick: () -> Unit) {
             val options = listOf(
                 Pair("A", "Texte IA"),
                 Pair("B", "Image IA"),
-                Pair("C", "Vidéo Synthèse"),
                 Pair("D", "Voix Jarvis")
             )
             options.forEach { (code, label) ->
@@ -1913,11 +1990,15 @@ fun OptionTextTab(viewModel: JarvisViewModel, textInput: String, onPromptChange:
         Spacer(modifier = Modifier.height(16.dp))
         
         // Result viewer
-        Card(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .glassmorphic(
+                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                    backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(12.dp)
+                )
         ) {
             Box(modifier = Modifier.fillMaxSize().padding(12.dp)) {
                 if (viewModel.textGenResult.isNotEmpty()) {
@@ -2014,11 +2095,15 @@ fun OptionImageTab(viewModel: JarvisViewModel, imageInput: String, onPromptChang
         Spacer(modifier = Modifier.height(16.dp))
         
         // Image box
-        Card(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .glassmorphic(
+                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                    backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(12.dp)
+                )
         ) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 if (viewModel.isGeneratingImage) {
@@ -2062,6 +2147,27 @@ fun OptionImageTab(viewModel: JarvisViewModel, imageInput: String, onPromptChang
                                 Icon(Icons.Rounded.Share, contentDescription = "Partager", tint = Color.White, modifier = Modifier.size(18.dp))
                             }
                         }
+                    }
+                } else if (viewModel.imageGenerationError.isNotEmpty()) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Icon(Icons.Rounded.Warning, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.error)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Échec de génération :",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = viewModel.imageGenerationError,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
                     }
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -2154,11 +2260,15 @@ fun OptionVideoTab(viewModel: JarvisViewModel, videoInput: String, onPromptChang
         Spacer(modifier = Modifier.height(12.dp))
         
         // Video monitor viewport or rendering status
-        Card(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF070913)),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .glassmorphic(
+                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                    backgroundColor = Color(0xFF070913).copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(12.dp)
+                )
         ) {
             Box(modifier = Modifier.fillMaxSize().padding(12.dp)) {
                 if (viewModel.isGeneratingVideo) {
@@ -2498,11 +2608,15 @@ fun OptionVoiceTab(viewModel: JarvisViewModel, voiceInput: String, onScriptChang
         Spacer(modifier = Modifier.height(14.dp))
         
         // Voice visualization box with standard canvas drawing sine waves
-        Card(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF060913)),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .glassmorphic(
+                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                    backgroundColor = Color(0xFF060913).copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(12.dp)
+                )
         ) {
             Box(modifier = Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -2868,14 +2982,16 @@ fun TabFichiers(viewModel: JarvisViewModel, files: List<UploadedFile>, onMenuCli
 
 @Composable
 fun QuickTemplateCard(name: String, type: String, size: String, onClick: () -> Unit) {
-    Card(
+    Box(
         modifier = Modifier
             .width(160.dp)
             .clickable { onClick() }
-            .padding(vertical = 4.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+            .padding(vertical = 4.dp)
+            .glassmorphic(
+                borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.25f),
+                shape = RoundedCornerShape(12.dp)
+            )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Icon(
@@ -2898,18 +3014,14 @@ fun FileRowCard(
     onAttachToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelectedForAttachment) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-            else MaterialTheme.colorScheme.surface
-        ),
-        border = BorderStroke(
-            1.dp,
-            if (isSelectedForAttachment) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.primary.copy(alpha = 0.05f)
-        )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .glassmorphic(
+                borderColor = if (isSelectedForAttachment) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                backgroundColor = if (isSelectedForAttachment) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.25f),
+                shape = RoundedCornerShape(12.dp)
+            )
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
