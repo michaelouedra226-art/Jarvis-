@@ -44,9 +44,13 @@ object GeminiApiClient {
         val modelsToTry = mutableListOf<String>()
         modelsToTry.add(modelName)
         if (modelName == "gemini-3.5-flash") {
+            modelsToTry.add("gemini-2.5-flash")
+            modelsToTry.add("gemini-1.5-flash")
             modelsToTry.add("gemini-flash-latest")
             modelsToTry.add("gemini-3.1-flash-lite-preview")
         } else if (modelName == "gemini-3.1-pro-preview") {
+            modelsToTry.add("gemini-2.5-pro")
+            modelsToTry.add("gemini-1.5-pro")
             modelsToTry.add("gemini-3.5-flash")
             modelsToTry.add("gemini-flash-latest")
         }
@@ -55,7 +59,7 @@ object GeminiApiClient {
 
         for (currentModel in modelsToTry) {
             var attempt = 0
-            val maxAttempts = 3
+            val maxAttempts = 2
             while (attempt < maxAttempts) {
                 val url = "https://generativelanguage.googleapis.com/v1beta/models/$currentModel:generateContent?key=$apiKey"
                 try {

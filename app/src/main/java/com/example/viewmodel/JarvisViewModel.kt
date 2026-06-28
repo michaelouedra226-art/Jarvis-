@@ -402,7 +402,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
         }
     }
 
-    // Option B: Image Generation (Pollinations AI with robust local caching & retries)
+    // Option B: Image Generation (Pollinations AI with robust local caching & retries on Dispatchers.IO)
     fun generateGenImage() {
         if (imagePromptInput.trim().isEmpty()) return
         isGeneratingImage = true
@@ -430,35 +430,37 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application),
                     .readTimeout(30, TimeUnit.SECONDS)
                     .build()
                 
-                for (url in urlsToTry) {
-                    var attempts = 0
-                    while (attempts < 2) {
-                        try {
-                            val request = Request.Builder().url(url).build()
-                            okHttpClient.newCall(request).execute().use { response ->
-                                if (response.isSuccessful) {
-                                    val bytes = response.body?.bytes()
-                                    if (bytes != null && bytes.isNotEmpty()) {
-                                        val context = getApplication<Application>().applicationContext
-                                        val cacheDir = context.cacheDir
-                                        val file = File(cacheDir, "generated_image_${System.currentTimeMillis()}.jpg")
-                                        file.writeBytes(bytes)
-                                        localFilePath = file.absolutePath
-                                        success = true
+                withContext(Dispatchers.IO) {
+                    for (url in urlsToTry) {
+                        var attempts = 0
+                        while (attempts < 2) {
+                            try {
+                                val request = Request.Builder().url(url).build()
+                                okHttpClient.newCall(request).execute().use { response ->
+                                    if (response.isSuccessful) {
+                                        val bytes = response.body?.bytes()
+                                        if (bytes != null && bytes.isNotEmpty()) {
+                                            val context = getApplication<Application>().applicationContext
+                                            val cacheDir = context.cacheDir
+                                            val file = File(cacheDir, "generated_image_${System.currentTimeMillis()}.jpg")
+                                            file.writeBytes(bytes)
+                                            localFilePath = file.absolutePath
+                                            success = true
+                                        }
+                                    } else {
+                                        lastErr = "HTTP ${response.code}: ${response.message}"
                                     }
-                                } else {
-                                    lastErr = "HTTP ${response.code}: ${response.message}"
                                 }
+                            } catch (e: Exception) {
+                                lastErr = e.localizedMessage ?: "Erreur de connexion inconnue"
                             }
-                        } catch (e: Exception) {
-                            lastErr = e.localizedMessage ?: "Erreur de connexion inconnue"
+                            
+                            if (success) break
+                            attempts++
+                            delay(500)
                         }
-                        
                         if (success) break
-                        attempts++
-                        delay(500)
                     }
-                    if (success) break
                 }
                 
                 if (success && localFilePath.isNotEmpty()) {
